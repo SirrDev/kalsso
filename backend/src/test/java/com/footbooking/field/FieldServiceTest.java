@@ -1,61 +1,75 @@
 package com.footbooking.field;
 
 import com.footbooking.common.ApiException;
-import com.footbooking.field.FieldDtos.FieldRequest;
-import com.footbooking.venue.Venue;
-import com.footbooking.venue.VenueService;
+import com.footbooking.field.OpeningHoursDtos.OpeningSlot;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
 
-import java.util.UUID;
+import java.time.LocalTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
 
-class FieldServiceTest {
+class OpeningHoursServiceTest {
 
-    private final FieldRepository repo = Mockito.mock(FieldRepository.class);
-    private final VenueService venueService = Mockito.mock(VenueService.class);
-    private final FieldService service = new FieldService(repo, venueService);
-
-    private final UUID owner = UUID.randomUUID();
-    private final UUID venueId = UUID.randomUUID();
+    private static OpeningSlot slot(int day, String open, String close) {
+        return new OpeningSlot(day, LocalTime.parse(open), LocalTime.parse(close));
+    }
 
     @Test
-    void create_invalidSlotMinutes_returns400() {
-        when(venueService.getOwned(owner, venueId)).thenReturn(new Venue());
-        FieldRequest req = new FieldRequest("Terrain 1", FieldFormat.FIVE, FieldSurface.SYNTHETIC, 45);
+    void validWeek_isAccepted() {
+        assertDoesNotThrow(() -> OpeningHoursService.validate(List.of(
+                slot(1, "16:00", "23:00"),
+                slot(6, "08:00", "23:00"))));
+    }
 
-        ApiException ex = assertThrows(ApiException.class, () -> service.create(owner, venueId, req));
+    @Test
+    void emptyWeek_isAccepted() {
+        assertDoesNotThrow(() -> OpeningHoursService.validate(List.of()));
+    }
 
+    @Test
+    void closeBeforeOpen_returns400() {
+        ApiException ex = assertThrows(ApiException.class, () ->
+                OpeningHoursService.validate(List.of(slot(1, "20:00", "16:00"))));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
-        verify(repo, never()).save(any());
     }
 
     @Test
-    void create_foreignVenue_propagates404() {
-        when(venueService.getOwned(owner, venueId))
-                .thenThrow(new ApiException(HttpStatus.NOT_FOUND, "Complexe introuvable"));
-        FieldRequest req = new FieldRequest("Terrain 1", FieldFormat.FIVE, FieldSurface.SYNTHETIC, 60);
-
-        ApiException ex = assertThrows(ApiException.class, () -> service.create(owner, venueId, req));
-
-        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
-        verify(repo, never()).save(any());
+    void closeEqualsOpen_returns400() {
+        ApiException ex = assertThrows(ApiException.class, () ->
+                OpeningHoursService.validate(List.of(slot(1, "16:00", "16:00"))));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
     }
 
     @Test
-    void create_valid_savesField() {
-        when(venueService.getOwned(owner, venueId)).thenReturn(new Venue());
-        when(repo.save(any(Field.class))).thenAnswer(inv -> inv.getArgument(0));
-        FieldRequest req = new FieldRequest("Terrain 1", FieldFormat.SEVEN, FieldSurface.NATURAL, 90);
+    void overlappingSlotsSameDay_returns400() {
+        ApiException ex = assertThrows(ApiException.class, () ->
+                OpeningHoursService.validate(List.of(
+                        slot(1, "16:00", "20:00"),
+                        slot(1, "19:00", "23:00"))));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+    }
 
-        var res = service.create(owner, venueId, req);
+    @Test
+    void overlappingSlots_areDetected_evenIfSentOutOfOrder() {
+        assertThrows(ApiException.class, () ->
+                OpeningHoursService.validate(List.of(
+                        slot(1, "19:00", "23:00"),
+                        slot(1, "16:00", "20:00"))));
+    }
 
-        assertEquals(90, res.slotMinutes());
-        assertEquals(FieldFormat.SEVEN, res.format());
-        assertTrue(res.active());
+    @Test
+    void touchingSlotsSameDay_areAccepted() {
+        assertDoesNotThrow(() -> OpeningHoursService.validate(List.of(
+                slot(1, "08:00", "12:00"),
+                slot(1, "12:00", "18:00"))));
+    }
+
+    @Test
+    void sameHoursOnDifferentDays_areAccepted() {
+        assertDoesNotThrow(() -> OpeningHoursService.validate(List.of(
+                slot(1, "16:00", "23:00"),
+                slot(2, "16:00", "23:00"))));
     }
 }
