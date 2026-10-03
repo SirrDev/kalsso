@@ -86,7 +86,7 @@ jobs:
           target: ${{ vars.DEPLOY_PATH || '/opt/footbooking' }}
 
       - name: Deploy
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
