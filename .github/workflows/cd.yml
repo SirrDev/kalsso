@@ -1,0 +1,108 @@
+name: cd
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "docker-compose.prod.yml"
+      - "infra/**"
+      - ".github/workflows/cd.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: cd-production
+  cancel-in-progress: false   # ne jamais interrompre un deploiement en cours
+
+jobs:
+  # 1) Tests : memes verifications que sur les PR
+  test:
+    uses: ./.github/workflows/backend-ci.yml
+
+  # 2) ETAPE 2 : construire et publier l'image sur GitHub Container Registry (ghcr.io)
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Gere automatiquement le nom en minuscules exigees par ghcr.io
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/api
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - id: image
+        run: |
+          IMAGE=$(echo "ghcr.io/${{ github.repository }}/api" | tr '[:upper:]' '[:lower:]')
+          echo "ref=${IMAGE}:sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+  # 3) ETAPE 3 : deploiement SSH, active uniquement quand la variable
+  #    de depot DEPLOY_ENABLED vaut "true" (Settings > Variables > Actions)
+  deploy:
+    needs: publish
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment: production        # permet d'exiger une approbation manuelle
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy deployment files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: "docker-compose.prod.yml,infra/Caddyfile"
+          target: ${{ vars.DEPLOY_PATH || '/opt/footbooking' }}
+
+      - name: Deploy
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE: ${{ needs.publish.outputs.image }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE
+          script_stop: true
+          script: |
+            cd ${{ vars.DEPLOY_PATH || '/opt/footbooking' }}
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            echo "API_IMAGE=$IMAGE" > .image.env
+            docker compose --env-file .env --env-file .image.env -f docker-compose.prod.yml pull api
+            docker compose --env-file .env --env-file .image.env -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -f
+            docker logout ghcr.io

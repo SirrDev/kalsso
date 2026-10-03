@@ -1,0 +1,127 @@
+==============================================================
+ FOOTBOOKING - SaaS de location de terrains de football
+ Suivi des etapes de developpement
+==============================================================
+Legende : [ ] a faire   [~] en cours   [x] termine
+
+STACK
+- Backend  : Spring Boot 3 (Java 21), PostgreSQL, Flyway, JWT, Redis (plus tard)
+- Frontend : React + Vite + PWA (TanStack Query, Tailwind)
+- Notifications : WhatsApp Business API + SMS (fallback)
+- Deploiement : Docker / Docker Compose
+
+==============================================================
+ PARTIE 1 - BACKEND (Spring Boot)
+==============================================================
+
+B0. Infrastructure et socle
+ [x] Projet Maven Spring Boot (monolithe modulaire)
+ [x] Dockerfile multi-stage + docker-compose (API + PostgreSQL)
+ [x] Configuration par variables d'environnement (.env)
+ [x] Flyway : migration V1 (schema complet + contrainte anti-chevauchement)
+ [x] Actuator /health, Swagger (Springdoc)
+
+B1. Authentification et roles
+ [x] Entite User, roles CLIENT / OWNER / STAFF / ADMIN
+ [x] Inscription / connexion, mots de passe BCrypt
+ [x] JWT stateless + filtre de securite
+ [x] Gestion globale des erreurs (JSON uniforme)
+ [ ] Refresh token, mot de passe oublie
+ [ ] Verification du telephone (OTP SMS/WhatsApp)
+
+B2. Venues et terrains (cote proprietaire)
+ [x] CRUD Venue (complexe) et Field (terrain : foot 5/7/11, surface, indoor)
+ [ ] Upload des photos (stockage S3/MinIO)
+ [ ] Horaires d'ouverture, jours de fermeture
+ [ ] Regles de tarification (jour, tranche horaire, week-end)
+ [x] Controle d'acces : un OWNER ne voit que ses terrains
+
+B3. Disponibilites
+ [ ] Algorithme de calcul des creneaux libres (horaires - fermetures - reservations)
+ [ ] Endpoint de recherche (ville, date, type de terrain, prix)
+ [ ] Cache Redis des disponibilites
+
+B4. Reservations
+ [ ] Creation de reservation PENDING (hold 10 min)
+ [ ] Gestion de l'erreur 409 (contrainte anti-chevauchement)
+ [ ] Job planifie : liberation des holds expires
+ [ ] Annulation, politique de remboursement
+ [ ] Blocage manuel de creneaux par le proprietaire
+ [ ] Test de concurrence (Testcontainers)
+
+B5. Paiement
+ [ ] Choix du provider (Wave / Orange Money / CinetPay / Stripe)
+ [ ] Initiation du paiement + webhook (signature + idempotence)
+ [ ] Acompte, remboursements
+ [ ] Calcul de la commission plateforme
+
+B6. Notifications
+ [ ] Interface NotificationChannel (pattern Strategy)
+ [ ] WhatsApp Business API (templates approuves par Meta)
+ [ ] SMS provider + fallback automatique
+ [ ] Table outbox + worker asynchrone avec reessais
+ [ ] Rappels automatiques (24 h et 2 h avant le match)
+ [ ] Gestion du consentement (opt-in)
+
+B7. Dashboard et administration
+ [ ] Statistiques proprietaire (revenus, taux de remplissage)
+ [ ] Gestion du personnel (STAFF)
+ [ ] Back-office ADMIN : validation des terrains, litiges, commissions
+
+B8. Qualite et production
+ [ ] Tests unitaires et d'integration, rate limiting
+ [x] CI GitHub Actions (build + tests) - voir docs/CICD.md
+ [x] CD : image ghcr.io + deploiement SSH (a activer, docs/CICD.md)
+ [ ] Logs structures, monitoring
+ [ ] Sauvegardes DB, HTTPS (reverse proxy Nginx/Traefik)
+
+==============================================================
+ PARTIE 2 - FRONTEND (React PWA)
+==============================================================
+
+F0. Socle
+ [ ] Vite + React + TypeScript + Tailwind
+ [ ] vite-plugin-pwa (manifest, service worker, installable)
+ [ ] React Router, TanStack Query, client API (Axios/fetch + JWT)
+ [ ] i18n (fr / en), theme, layout mobile-first
+ [ ] Dockerfile (build + Nginx) et ajout au docker-compose
+
+F1. Authentification
+ [ ] Pages inscription / connexion (client ou proprietaire)
+ [ ] Routes protegees par role, gestion du token
+
+F2. Cote client (joueurs)
+ [ ] Recherche de terrains (filtres, carte, liste)
+ [ ] Fiche terrain (photos, tarifs, horaires)
+ [ ] Calendrier de disponibilites
+ [ ] Tunnel de reservation + paiement
+ [ ] Mes reservations (historique, annulation)
+
+F3. Cote proprietaire
+ [ ] Gestion des venues / terrains / photos
+ [ ] Parametrage horaires et tarifs
+ [ ] Calendrier des reservations (FullCalendar)
+ [ ] Blocage manuel de creneaux
+ [ ] Dashboard (revenus, remplissage)
+ [ ] Gestion du personnel
+
+F4. PWA et experience mobile
+ [ ] Installation sur l'ecran d'accueil
+ [ ] Cache hors ligne (consultation)
+ [ ] Notifications push web (optionnel)
+ [ ] Optimisation performances (Lighthouse)
+
+F5. Qualite
+ [ ] Tests (Vitest, Testing Library, Playwright)
+ [ ] CI/CD, deploiement
+
+==============================================================
+ PARTIE 3 - ORDRE DE LIVRAISON (MVP)
+==============================================================
+1. B0 -> B1            (socle + auth)
+2. B2 -> B3            (terrains + disponibilites)
+3. F0 -> F1 -> F3      (front proprietaire)
+4. B4 -> F2            (reservation cote client)
+5. B5                  (paiement)
+6. B6                  (notifications)
+7. B7, B8, F4, F5      (finitions et mise en production)

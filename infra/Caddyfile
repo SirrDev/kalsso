@@ -1,0 +1,11 @@
+{$DOMAIN} {
+	encode gzip
+	# /actuator et swagger ne sont pas exposes publiquement, sauf la sante
+	@blocked path /actuator/* /swagger-ui/* /v3/api-docs/*
+	respond @blocked 404
+	handle /health {
+		rewrite * /actuator/health
+		reverse_proxy api:8080
+	}
+	reverse_proxy api:8080
+}
