@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.ZoneId;
+import java.util.EnumSet;
+import java.util.Set;
 
 import java.util.List;
 import java.util.UUID;
@@ -76,6 +78,37 @@ public class VenueService {
     public Venue getById(UUID venueId) {
         return venues.findById(venueId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Complexe introuvable"));
+    }
+
+    // ---------- Administration (appele par le back-office) ----------
+
+    @Transactional(readOnly = true)
+    public List<VenueResponse> listByStatus(VenueStatus status) {
+        return venues.findByStatusOrderByCreatedAtAsc(status).stream().map(VenueResponse::from).toList();
+    }
+
+    @Transactional
+    public VenueResponse approve(UUID venueId) {
+        Venue v = getById(venueId);
+        return VenueResponse.from(changeStatus(v, VenueStatus.ACTIVE,
+                EnumSet.of(VenueStatus.PENDING, VenueStatus.SUSPENDED)));
+    }
+
+    @Transactional
+    public VenueResponse suspend(UUID venueId) {
+        Venue v = getById(venueId);
+        return VenueResponse.from(changeStatus(v, VenueStatus.SUSPENDED,
+                EnumSet.of(VenueStatus.ACTIVE, VenueStatus.PENDING)));
+    }
+
+    /** Regle de transition, isolee pour rester lisible et testable. */
+    static Venue changeStatus(Venue v, VenueStatus target, Set<VenueStatus> allowedFrom) {
+        if (!allowedFrom.contains(v.getStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "Transition impossible de " + v.getStatus() + " vers " + target);
+        }
+        v.setStatus(target);
+        return v;
     }
 
     private void apply(Venue v, VenueRequest req) {

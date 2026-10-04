@@ -80,4 +80,56 @@ class VenueServiceTest {
 
         assertSame(venue, service.getOwned(ownerA, venueId));
     }
+
+    private Venue venueWithStatus(VenueStatus status, UUID venueId) {
+        Venue v = new Venue();
+        v.setOwnerId(ownerA);
+        v.setStatus(status);
+        when(repo.findById(venueId)).thenReturn(Optional.of(v));
+        return v;
+    }
+
+    @Test
+    void approve_pendingVenue_becomesActive() {
+        UUID id = UUID.randomUUID();
+        venueWithStatus(VenueStatus.PENDING, id);
+
+        assertEquals(VenueStatus.ACTIVE, service.approve(id).status());
+    }
+
+    @Test
+    void approve_suspendedVenue_becomesActive() {
+        UUID id = UUID.randomUUID();
+        venueWithStatus(VenueStatus.SUSPENDED, id);
+
+        assertEquals(VenueStatus.ACTIVE, service.approve(id).status());
+    }
+
+    @Test
+    void approve_alreadyActive_returns409() {
+        UUID id = UUID.randomUUID();
+        venueWithStatus(VenueStatus.ACTIVE, id);
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.approve(id));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+    }
+
+    @Test
+    void suspend_activeVenue_becomesSuspended() {
+        UUID id = UUID.randomUUID();
+        venueWithStatus(VenueStatus.ACTIVE, id);
+
+        assertEquals(VenueStatus.SUSPENDED, service.suspend(id).status());
+    }
+
+    @Test
+    void suspend_alreadySuspended_returns409() {
+        UUID id = UUID.randomUUID();
+        venueWithStatus(VenueStatus.SUSPENDED, id);
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.suspend(id));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+    }
 }
