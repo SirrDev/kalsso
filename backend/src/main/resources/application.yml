@@ -32,3 +32,14 @@ app:
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:1440}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+  payment:
+    provider: ${PAYMENT_PROVIDER:paytech}
+    commission-percent: ${PAYMENT_COMMISSION_PERCENT:3}
+  paytech:
+    base-url: https://paytech.sn/api
+    api-key: ${PAYTECH_API_KEY:}
+    api-secret: ${PAYTECH_API_SECRET:}
+    env: ${PAYTECH_ENV:test}
+    ipn-url: ${PAYTECH_IPN_URL:}
+    success-url: ${PAYTECH_SUCCESS_URL:}
+    cancel-url: ${PAYTECH_CANCEL_URL:}
