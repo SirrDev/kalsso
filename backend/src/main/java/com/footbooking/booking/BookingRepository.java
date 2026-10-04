@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface BookingRepository extends JpaRepository<Booking, UUID> {
@@ -50,4 +51,8 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
               and b.expiresAt <= :now
             """)
     int cancelAllExpiredHolds(@Param("now") Instant now);
+
+    List<Booking> findTop100ByUserIdOrderByStartTimeDesc(UUID userId);
+
+    Optional<Booking> findByIdAndUserId(UUID id, UUID userId);
 }
