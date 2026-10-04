@@ -15,6 +15,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
 import com.footbooking.venue.VenueStatus;
+import com.footbooking.booking.BookingOccupancy;
+import com.footbooking.booking.BookingOccupancy.Occupied;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -37,6 +42,7 @@ class AvailabilityServiceTest {
     private final VenueService venueService = Mockito.mock(VenueService.class);
     private final OpeningHoursService hoursService = Mockito.mock(OpeningHoursService.class);
     private final PricingService pricingService = Mockito.mock(PricingService.class);
+    private final BookingOccupancy bookingOccupancy = Mockito.mock(BookingOccupancy.class);
 
     private final UUID fieldId = UUID.randomUUID();
     private final UUID venueId = UUID.randomUUID();
@@ -58,7 +64,8 @@ class AvailabilityServiceTest {
 
     private AvailabilityService serviceAt(String instant) {
         Clock clock = Clock.fixed(Instant.parse(instant), ZoneOffset.UTC);
-        return new AvailabilityService(fieldService, venueService, hoursService, pricingService, clock);
+        return new AvailabilityService(fieldService, venueService, hoursService, pricingService,
+                bookingOccupancy, clock);
     }
 
     private static List<DayRange> hours(String open, String close) {
@@ -205,5 +212,49 @@ class AvailabilityServiceTest {
                 .requireBookable(fieldId, Instant.parse("2026-10-10T18:00:00Z")));
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
+
+    @Test
+    void bookedSlot_isFlaggedBooked_andNeighbourStaysAvailable() {
+        when(hoursService.rangesFor(fieldId, DAY)).thenReturn(hours("18:00", "20:00"));
+        when(bookingOccupancy.forField(eq(fieldId), any(), any())).thenReturn(List.of(
+                new Occupied(Instant.parse("2026-10-10T18:00:00Z"), Instant.parse("2026-10-10T19:00:00Z"))));
+
+        AvailabilityResponse res = serviceAt("2026-10-01T12:00:00Z").forDay(fieldId, DAY);
+
+        assertEquals("BOOKED", res.slots().get(0).status());
+        assertEquals("AVAILABLE", res.slots().get(1).status());
+    }
+
+    @Test
+    void dayBounds_areComputedInTheVenueTimezone() {
+        venue.setTimezone("Europe/Paris");
+        when(hoursService.rangesFor(fieldId, DAY)).thenReturn(List.of());
+
+        serviceAt("2026-10-01T12:00:00Z").forDay(fieldId, DAY);
+
+        verify(bookingOccupancy).forField(fieldId,
+                Instant.parse("2026-10-09T22:00:00Z"), Instant.parse("2026-10-10T22:00:00Z"));
+    }
+
+    @Test
+    void isOccupied_detectsAnyOverlap() {
+        SlotGenerator.Slot slot = new SlotGenerator.Slot(
+                Instant.parse("2026-10-10T19:00:00Z"), Instant.parse("2026-10-10T20:00:00Z"),
+                LocalTime.of(19, 0), LocalTime.of(20, 0), SlotGenerator.Status.AVAILABLE);
+
+        assertTrue(AvailabilityService.isOccupied(slot, List.of(
+                new Occupied(Instant.parse("2026-10-10T19:30:00Z"), Instant.parse("2026-10-10T20:30:00Z")))));
+    }
+
+    @Test
+    void isOccupied_touchingBookingsDoNotBlock() {
+        SlotGenerator.Slot slot = new SlotGenerator.Slot(
+                Instant.parse("2026-10-10T19:00:00Z"), Instant.parse("2026-10-10T20:00:00Z"),
+                LocalTime.of(19, 0), LocalTime.of(20, 0), SlotGenerator.Status.AVAILABLE);
+
+        assertFalse(AvailabilityService.isOccupied(slot, List.of(
+                new Occupied(Instant.parse("2026-10-10T18:00:00Z"), Instant.parse("2026-10-10T19:00:00Z")),
+                new Occupied(Instant.parse("2026-10-10T20:00:00Z"), Instant.parse("2026-10-10T21:00:00Z")))));
     }
 }
