@@ -4,6 +4,8 @@ import com.footbooking.availability.AvailabilityDtos.AvailabilityResponse;
 import com.footbooking.availability.AvailabilityDtos.SlotResponse;
 import com.footbooking.availability.SlotGenerator.Range;
 import com.footbooking.availability.SlotGenerator.Slot;
+import com.footbooking.booking.BookingOccupancy;
+import com.footbooking.booking.BookingOccupancy.Occupied;
 import com.footbooking.common.ApiException;
 import com.footbooking.field.Field;
 import com.footbooking.field.FieldService;
@@ -12,14 +14,14 @@ import com.footbooking.field.PricingService;
 import com.footbooking.field.PricingService.Price;
 import com.footbooking.venue.Venue;
 import com.footbooking.venue.VenueService;
+import com.footbooking.venue.VenueStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.footbooking.venue.VenueStatus;
-import java.math.BigDecimal;
-import java.time.Instant;
 
+import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -37,15 +39,17 @@ public class AvailabilityService {
     private final VenueService venueService;
     private final OpeningHoursService hoursService;
     private final PricingService pricingService;
+    private final BookingOccupancy bookingOccupancy;
     private final Clock clock;
 
     public AvailabilityService(FieldService fieldService, VenueService venueService,
                                OpeningHoursService hoursService, PricingService pricingService,
-                               Clock clock) {
+                               BookingOccupancy bookingOccupancy, Clock clock) {
         this.fieldService = fieldService;
         this.venueService = venueService;
         this.hoursService = hoursService;
         this.pricingService = pricingService;
+        this.bookingOccupancy = bookingOccupancy;
         this.clock = clock;
     }
 
@@ -73,7 +77,9 @@ public class AvailabilityService {
         List<Slot> slots = SlotGenerator.generate(date, ranges, field.getSlotMinutes(), zone, clock.instant());
 
         Function<LocalDateTime, Optional<Price>> priceOf = pricingService.priceResolver(fieldId);
-        List<SlotResponse> response = slots.stream().map(s -> toResponse(s, date, priceOf)).toList();
+        List<Occupied> occupied = bookingOccupancy.forField(fieldId,
+                date.atStartOfDay(zone).toInstant(), date.plusDays(1).atStartOfDay(zone).toInstant());
+        List<SlotResponse> response = slots.stream().map(s -> toResponse(s, date, priceOf, occupied)).toList();
 
         return new AvailabilityResponse(fieldId, date, venue.getTimezone(), field.getSlotMinutes(), response);
     }
@@ -123,13 +129,20 @@ public class AvailabilityService {
         return new BookableSlot(fieldId, slot.start(), slot.end(), price.amount(), price.currency());
     }
 
-    private SlotResponse toResponse(Slot s, LocalDate date, Function<LocalDateTime, Optional<Price>> priceOf) {
+    private SlotResponse toResponse(Slot s, LocalDate date,
+                                    Function<LocalDateTime, Optional<Price>> priceOf, List<Occupied> occupied) {
         Optional<Price> price = priceOf.apply(LocalDateTime.of(date, s.localStart()));
         String status = s.status() == SlotGenerator.Status.PAST ? "PAST"
-                : price.isEmpty() ? "NO_PRICE"
-                  : "AVAILABLE";
+                : isOccupied(s, occupied) ? "BOOKED"
+                  : price.isEmpty() ? "NO_PRICE"
+                    : "AVAILABLE";
         return new SlotResponse(s.start(), s.end(), s.localStart(), s.localEnd(), status,
                 price.map(Price::amount).orElse(null),
                 price.map(Price::currency).orElse(null));
+    }
+
+    /** Chevauchement strict : une reservation qui se termine a 19h ne bloque pas le creneau de 19h. */
+    static boolean isOccupied(Slot slot, List<Occupied> occupied) {
+        return occupied.stream().anyMatch(o -> o.start().isBefore(slot.end()) && o.end().isAfter(slot.start()));
     }
 }
