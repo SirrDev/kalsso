@@ -152,4 +152,58 @@ class AvailabilityServiceTest {
 
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
     }
+
+    @Test
+    void requireBookable_validSlot_returnsBoundsAndPrice() {
+        when(hoursService.rangesFor(fieldId, DAY)).thenReturn(hours("18:00", "20:00"));
+
+        AvailabilityService.BookableSlot s = serviceAt("2026-10-01T12:00:00Z")
+                .requireBookable(fieldId, Instant.parse("2026-10-10T19:00:00Z"));
+
+        assertEquals(Instant.parse("2026-10-10T20:00:00Z"), s.end());
+        assertEquals(new BigDecimal("5000"), s.price());
+        assertEquals("XOF", s.currency());
+    }
+
+    @Test
+    void requireBookable_startNotOnASlotBoundary_returns400() {
+        when(hoursService.rangesFor(fieldId, DAY)).thenReturn(hours("18:00", "20:00"));
+
+        ApiException ex = assertThrows(ApiException.class, () -> serviceAt("2026-10-01T12:00:00Z")
+                .requireBookable(fieldId, Instant.parse("2026-10-10T19:30:00Z")));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+    }
+
+    @Test
+    void requireBookable_pastSlot_returns400() {
+        when(hoursService.rangesFor(fieldId, DAY)).thenReturn(hours("18:00", "20:00"));
+
+        // 19h30 : le creneau de 19h a deja commence
+        ApiException ex = assertThrows(ApiException.class, () -> serviceAt("2026-10-10T19:30:00Z")
+                .requireBookable(fieldId, Instant.parse("2026-10-10T19:00:00Z")));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+    }
+
+    @Test
+    void requireBookable_noTariff_returns422() {
+        when(hoursService.rangesFor(fieldId, DAY)).thenReturn(hours("18:00", "20:00"));
+        when(pricingService.priceResolver(fieldId)).thenReturn(dt -> Optional.empty());
+
+        ApiException ex = assertThrows(ApiException.class, () -> serviceAt("2026-10-01T12:00:00Z")
+                .requireBookable(fieldId, Instant.parse("2026-10-10T18:00:00Z")));
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatus());
+    }
+
+    @Test
+    void requireBookable_pendingVenue_returns404() {
+        venue.setStatus(VenueStatus.PENDING);
+
+        ApiException ex = assertThrows(ApiException.class, () -> serviceAt("2026-10-01T12:00:00Z")
+                .requireBookable(fieldId, Instant.parse("2026-10-10T18:00:00Z")));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
 }

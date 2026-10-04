@@ -3,6 +3,7 @@ package com.footbooking.booking;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Modifying;
 
 import java.time.Instant;
 import java.util.List;
@@ -26,4 +27,18 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                                 @Param("from") Instant from,
                                 @Param("to") Instant to,
                                 @Param("now") Instant now);
+
+    /** Libere les blocages expires qui occupent encore ce creneau (ils bloquent via la contrainte SQL). */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Booking b set b.status = com.footbooking.booking.BookingStatus.CANCELLED
+            where b.fieldId = :fieldId
+              and b.status = com.footbooking.booking.BookingStatus.PENDING
+              and b.expiresAt <= :now
+              and b.startTime < :to and b.endTime > :from
+            """)
+    int cancelExpiredHolds(@Param("fieldId") UUID fieldId,
+                           @Param("from") Instant from,
+                           @Param("to") Instant to,
+                           @Param("now") Instant now);
 }
