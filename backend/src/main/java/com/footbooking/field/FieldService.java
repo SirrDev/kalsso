@@ -69,6 +69,14 @@ public class FieldService {
         return f;
     }
 
+    /** Un terrain desactive est invisible du public : 404, comme s'il n'existait pas. */
+    @Transactional(readOnly = true)
+    public Field getActive(UUID fieldId) {
+        return fields.findById(fieldId)
+                .filter(Field::isActive)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Terrain introuvable"));
+    }
+
     private void validateSlot(Integer minutes) {
         if (minutes == null || !ALLOWED_SLOT_MINUTES.contains(minutes)) {
             throw new ApiException(HttpStatus.BAD_REQUEST,

@@ -5,6 +5,8 @@ import com.footbooking.field.OpeningHoursDtos.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDate;
+import java.time.LocalTime;
 
 import java.util.Comparator;
 import java.util.List;
@@ -32,6 +34,24 @@ public class OpeningHoursService {
         fieldService.getOwned(ownerId, fieldId);
         return hoursRepo.findByFieldIdOrderByDayOfWeekAscOpenTimeAsc(fieldId)
                 .stream().map(OpeningSlotResponse::from).toList();
+    }
+
+    public record DayRange(LocalTime open, LocalTime close) {}
+
+    /**
+     * Plages d'ouverture d'un terrain pour une date donnee (heure locale du complexe).
+     * Liste vide si le terrain est ferme ce jour-la (jour de fermeture ou aucun horaire).
+     */
+    @Transactional(readOnly = true)
+    public List<DayRange> rangesFor(UUID fieldId, LocalDate date) {
+        if (closedRepo.existsByFieldIdAndDay(fieldId, date)) {
+            return List.of();
+        }
+        int dayOfWeek = date.getDayOfWeek().getValue();   // 1 = lundi ... 7 = dimanche
+        return hoursRepo.findByFieldIdOrderByDayOfWeekAscOpenTimeAsc(fieldId).stream()
+                .filter(h -> h.getDayOfWeek() == dayOfWeek)
+                .map(h -> new DayRange(h.getOpenTime(), h.getCloseTime()))
+                .toList();
     }
 
     /** Remplace toute la semaine. Un jour sans plage = terrain ferme ce jour-la. */

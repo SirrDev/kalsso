@@ -71,6 +71,13 @@ public class VenueService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Complexe introuvable"));
     }
 
+    /** Lecture sans controle de propriete, pour les parcours publics (disponibilites, recherche). */
+    @Transactional(readOnly = true)
+    public Venue getById(UUID venueId) {
+        return venues.findById(venueId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Complexe introuvable"));
+    }
+
     private void apply(Venue v, VenueRequest req) {
         v.setName(req.name().trim());
         v.setDescription(req.description());
