@@ -31,6 +31,9 @@ public class Venue {
     private Double longitude;
     private String phone;
 
+    @Column(nullable = false)
+    private String timezone = "Africa/Dakar";
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private VenueStatus status = VenueStatus.PENDING;
@@ -58,4 +61,6 @@ public class Venue {
     public VenueStatus getStatus() { return status; }
     public void setStatus(VenueStatus status) { this.status = status; }
     public Instant getCreatedAt() { return createdAt; }
+    public String getTimezone() { return timezone; }
+    public void setTimezone(String timezone) { this.timezone = timezone; }
 }

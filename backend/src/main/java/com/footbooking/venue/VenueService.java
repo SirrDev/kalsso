@@ -7,6 +7,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.ZoneId;
 
 import java.util.List;
 import java.util.UUID;
@@ -78,5 +79,16 @@ public class VenueService {
         v.setLatitude(req.latitude());
         v.setLongitude(req.longitude());
         v.setPhone(req.phone());
+        if (req.timezone() != null && !req.timezone().isBlank()) {
+            v.setTimezone(validTimezone(req.timezone().trim()));
+        }
+    }
+
+    static String validTimezone(String tz) {
+        if (!ZoneId.getAvailableZoneIds().contains(tz)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Fuseau horaire invalide (exemple : Africa/Dakar)");
+        }
+        return tz;
     }
 }
