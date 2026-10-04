@@ -1,0 +1,2 @@
+ALTER TABLE venue
+    ADD COLUMN timezone VARCHAR(50) NOT NULL DEFAULT 'Africa/Dakar';

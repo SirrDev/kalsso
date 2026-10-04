@@ -22,18 +22,41 @@ class VenueServiceTest {
     private final UUID ownerA = UUID.randomUUID();
     private final UUID ownerB = UUID.randomUUID();
 
-    private VenueRequest request() {
-        return new VenueRequest("Stade Pikine", null, "Rue 10", "Dakar", null, null, "+221770000000");
+    private VenueRequest request(String timezone) {
+        return new VenueRequest("Stade Pikine", null, "Rue 10", "Dakar", null, null,
+                "+221770000000", timezone);
     }
 
     @Test
     void create_setsPendingStatusAndOwner() {
         when(repo.save(any(Venue.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        VenueResponse res = service.create(ownerA, request());
+        VenueResponse res = service.create(ownerA, request(null));
 
         assertEquals(VenueStatus.PENDING, res.status());
         assertEquals("Stade Pikine", res.name());
+    }
+
+    @Test
+    void create_withoutTimezone_defaultsToDakar() {
+        when(repo.save(any(Venue.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertEquals("Africa/Dakar", service.create(ownerA, request(null)).timezone());
+    }
+
+    @Test
+    void create_withValidTimezone_isStored() {
+        when(repo.save(any(Venue.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertEquals("Europe/Paris", service.create(ownerA, request("Europe/Paris")).timezone());
+    }
+
+    @Test
+    void create_withInvalidTimezone_returns400() {
+        ApiException ex = assertThrows(ApiException.class,
+                () -> service.create(ownerA, request("Mars/Base1")));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
     }
 
     @Test
