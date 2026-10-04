@@ -55,4 +55,20 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     List<Booking> findTop100ByUserIdOrderByStartTimeDesc(UUID userId);
 
     Optional<Booking> findByIdAndUserId(UUID id, UUID userId);
+
+    /** Reservations visibles par le proprietaire : on ecarte les annulees et les blocages expires. */
+    @Query("""
+            select b from Booking b
+            where b.fieldId = :fieldId
+              and b.startTime < :to and b.endTime > :from
+              and (b.status in (com.footbooking.booking.BookingStatus.CONFIRMED,
+                                com.footbooking.booking.BookingStatus.COMPLETED,
+                                com.footbooking.booking.BookingStatus.NO_SHOW)
+                   or (b.status = com.footbooking.booking.BookingStatus.PENDING and b.expiresAt > :now))
+            order by b.startTime
+            """)
+    List<Booking> findForOwner(@Param("fieldId") UUID fieldId,
+                               @Param("from") Instant from,
+                               @Param("to") Instant to,
+                               @Param("now") Instant now);
 }
