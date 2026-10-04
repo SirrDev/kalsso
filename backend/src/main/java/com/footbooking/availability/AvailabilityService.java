@@ -15,6 +15,7 @@ import com.footbooking.venue.VenueService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.footbooking.venue.VenueStatus;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -50,6 +51,10 @@ public class AvailabilityService {
     public AvailabilityResponse forDay(UUID fieldId, LocalDate date) {
         Field field = fieldService.getActive(fieldId);
         Venue venue = venueService.getById(field.getVenueId());
+        if (venue.getStatus() != VenueStatus.ACTIVE) {
+            // 404 et non 403 : on ne revele pas l'existence d'un complexe non publie
+            throw new ApiException(HttpStatus.NOT_FOUND, "Terrain introuvable");
+        }
         ZoneId zone = ZoneId.of(venue.getTimezone());
 
         // "Aujourd'hui" se lit dans le fuseau du complexe, pas dans celui du serveur

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
+import com.footbooking.venue.VenueStatus;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -45,6 +46,7 @@ class AvailabilityServiceTest {
     @BeforeEach
     void setUp() {
         venue.setTimezone("Africa/Dakar");
+        venue.setStatus(VenueStatus.ACTIVE);
         field.setVenueId(venueId);
         field.setSlotMinutes(60);
         when(fieldService.getActive(fieldId)).thenReturn(field);
@@ -83,6 +85,26 @@ class AvailabilityServiceTest {
         AvailabilityResponse res = serviceAt("2026-10-01T12:00:00Z").forDay(fieldId, DAY);
 
         assertTrue(res.slots().isEmpty());
+    }
+
+    @Test
+    void pendingVenue_isHiddenFromThePublic() {
+        venue.setStatus(VenueStatus.PENDING);
+
+        ApiException ex = assertThrows(ApiException.class,
+                () -> serviceAt("2026-10-01T12:00:00Z").forDay(fieldId, DAY));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
+
+    @Test
+    void suspendedVenue_isHiddenFromThePublic() {
+        venue.setStatus(VenueStatus.SUSPENDED);
+
+        ApiException ex = assertThrows(ApiException.class,
+                () -> serviceAt("2026-10-01T12:00:00Z").forDay(fieldId, DAY));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
     }
 
     @Test
