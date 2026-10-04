@@ -41,4 +41,13 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                            @Param("from") Instant from,
                            @Param("to") Instant to,
                            @Param("now") Instant now);
+
+    /** Nettoyage global : annule tous les blocages expires, tous terrains confondus. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Booking b set b.status = com.footbooking.booking.BookingStatus.CANCELLED
+            where b.status = com.footbooking.booking.BookingStatus.PENDING
+              and b.expiresAt <= :now
+            """)
+    int cancelAllExpiredHolds(@Param("now") Instant now);
 }

@@ -63,6 +63,12 @@ public class BookingService {
         return BookingResponse.from(b);
     }
 
+    /** Appelee par la tache planifiee. Renvoie le nombre de reservations annulees. */
+    @Transactional
+    public int releaseExpiredHolds() {
+        return bookings.cancelAllExpiredHolds(clock.instant());
+    }
+
     static boolean isOverlap(DataIntegrityViolationException e) {
         String message = e.getMostSpecificCause().getMessage();
         return message != null && message.contains("booking_no_overlap");
