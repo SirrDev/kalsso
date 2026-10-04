@@ -10,6 +10,7 @@ import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import static org.mockito.Mockito.verify;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -96,5 +97,13 @@ class BookingServiceTest {
     @Test
     void isOverlap_ignoresOtherViolations() {
         assertFalse(BookingService.isOverlap(violation("duplicate key value violates unique constraint")));
+    }
+
+    @Test
+    void releaseExpiredHolds_usesTheClockAndReturnsTheCount() {
+        when(repo.cancelAllExpiredHolds(NOW)).thenReturn(3);
+
+        assertEquals(3, service.releaseExpiredHolds());
+        verify(repo).cancelAllExpiredHolds(NOW);
     }
 }
