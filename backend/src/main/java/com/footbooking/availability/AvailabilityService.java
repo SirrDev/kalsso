@@ -16,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.footbooking.venue.VenueStatus;
+import java.math.BigDecimal;
+import java.time.Instant;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -74,6 +76,51 @@ public class AvailabilityService {
         List<SlotResponse> response = slots.stream().map(s -> toResponse(s, date, priceOf)).toList();
 
         return new AvailabilityResponse(fieldId, date, venue.getTimezone(), field.getSlotMinutes(), response);
+    }
+
+    public record BookableSlot(UUID fieldId, Instant start, Instant end, BigDecimal price, String currency) {}
+
+    /**
+     * Verifie qu'un creneau est reservable et renvoie ses bornes et son prix.
+     * Ne regarde PAS les reservations existantes : c'est la contrainte de la base
+     * (booking_no_overlap) qui garantit l'absence de double reservation.
+     */
+    @Transactional(readOnly = true)
+    public BookableSlot requireBookable(UUID fieldId, Instant start) {
+        Field field = fieldService.getActive(fieldId);
+        Venue venue = venueService.getById(field.getVenueId());
+        if (venue.getStatus() != VenueStatus.ACTIVE) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Terrain introuvable");
+        }
+        ZoneId zone = ZoneId.of(venue.getTimezone());
+        LocalDate date = start.atZone(zone).toLocalDate();
+        LocalDate today = LocalDate.now(clock.withZone(zone));
+        if (date.isAfter(today.plusDays(MAX_DAYS_AHEAD))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Les reservations sont ouvertes jusqu'a " + MAX_DAYS_AHEAD + " jours a l'avance");
+        }
+
+        List<Range> ranges = hoursService.rangesFor(fieldId, date).stream()
+                .map(r -> new Range(r.open(), r.close()))
+                .toList();
+
+        Slot slot = SlotGenerator.generate(date, ranges, field.getSlotMinutes(), zone, clock.instant())
+                .stream()
+                .filter(s -> s.start().equals(start))
+                .findFirst()
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST,
+                        "Ce creneau n'existe pas pour ce terrain"));
+
+        if (slot.status() == SlotGenerator.Status.PAST) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Ce creneau est deja passe");
+        }
+
+        Price price = pricingService.priceResolver(fieldId)
+                .apply(LocalDateTime.of(date, slot.localStart()))
+                .orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Aucun tarif defini pour ce creneau"));
+
+        return new BookableSlot(fieldId, slot.start(), slot.end(), price.amount(), price.currency());
     }
 
     private SlotResponse toResponse(Slot s, LocalDate date, Function<LocalDateTime, Optional<Price>> priceOf) {
