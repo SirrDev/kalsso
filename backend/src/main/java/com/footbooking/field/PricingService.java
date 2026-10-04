@@ -5,6 +5,7 @@ import com.footbooking.field.PricingDtos.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.function.Function;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -74,6 +75,20 @@ public class PricingService {
                 .map(PricingRule::getPrice)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
                         "Aucun tarif defini pour ce creneau"));
+    }
+
+    public record Price(BigDecimal amount, String currency) {}
+
+    /**
+     * Charge les regles UNE fois et renvoie une fonction "heure de debut -> prix".
+     * Evite une requete SQL par creneau quand on calcule une journee entiere.
+     * Optional vide = aucun tarif pour cette heure (creneau non reservable).
+     */
+    @Transactional(readOnly = true)
+    public Function<LocalDateTime, Optional<Price>> priceResolver(UUID fieldId) {
+        List<PricingRule> rules = repo.findByFieldIdOrderByDayOfWeekAscStartTimeAsc(fieldId);
+        return start -> resolve(rules, start.getDayOfWeek().getValue(), start.toLocalTime())
+                .map(r -> new Price(r.getPrice(), r.getCurrency()));
     }
 
     // ---------- Regles pures (testables sans base de donnees) ----------
