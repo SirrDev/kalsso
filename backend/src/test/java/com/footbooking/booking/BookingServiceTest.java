@@ -17,6 +17,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,8 +34,7 @@ class BookingServiceTest {
     private final BookingRepository repo = Mockito.mock(BookingRepository.class);
     private final AvailabilityService availability = Mockito.mock(AvailabilityService.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-    private final BookingService service = new BookingService(repo, availability, clock, 10);
-
+    private final BookingService service = new BookingService(repo, availability, clock, 10, 24);
     private final UUID userId = UUID.randomUUID();
     private final UUID fieldId = UUID.randomUUID();
 
@@ -105,5 +106,92 @@ class BookingServiceTest {
 
         assertEquals(3, service.releaseExpiredHolds());
         verify(repo).cancelAllExpiredHolds(NOW);
+    }
+
+    private Booking booking(BookingStatus status, Instant start) {
+        Booking b = new Booking();
+        b.setUserId(userId);
+        b.setFieldId(fieldId);
+        b.setStartTime(start);
+        b.setEndTime(start.plusSeconds(3600));
+        b.setStatus(status);
+        b.setTotalPrice(new BigDecimal("8000"));
+        return b;
+    }
+
+    private void owns(UUID bookingId, Booking b) {
+        when(repo.findByIdAndUserId(bookingId, userId)).thenReturn(Optional.of(b));
+    }
+
+    @Test
+    void cancel_confirmedMoreThan24hBefore_isCancelled() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.CONFIRMED, START));   // START = 9 jours apres NOW
+
+        assertEquals(BookingStatus.CANCELLED, service.cancel(userId, id).status());
+    }
+
+    @Test
+    void cancel_confirmedExactly24hBefore_isAllowed() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.CONFIRMED, NOW.plusSeconds(24 * 3600L)));
+
+        assertEquals(BookingStatus.CANCELLED, service.cancel(userId, id).status());
+    }
+
+    @Test
+    void cancel_confirmedLessThan24hBefore_returns409() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.CONFIRMED, NOW.plusSeconds(23 * 3600L)));
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.cancel(userId, id));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+    }
+
+    @Test
+    void cancel_pendingHold_isAllowedEvenWithin24h() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.PENDING, NOW.plusSeconds(2 * 3600L)));
+
+        assertEquals(BookingStatus.CANCELLED, service.cancel(userId, id).status());
+    }
+
+    @Test
+    void cancel_alreadyCancelled_returns409() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.CANCELLED, START));
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.cancel(userId, id));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+    }
+
+    @Test
+    void cancel_completedBooking_returns409() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.COMPLETED, START));
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.cancel(userId, id));
+
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+    }
+
+    @Test
+    void cancel_someoneElsesBooking_returns404() {
+        UUID id = UUID.randomUUID();
+        when(repo.findByIdAndUserId(id, userId)).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.cancel(userId, id));
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
+
+    @Test
+    void listMine_returnsTheUsersBookings() {
+        when(repo.findTop100ByUserIdOrderByStartTimeDesc(userId))
+                .thenReturn(List.of(booking(BookingStatus.PENDING, START), booking(BookingStatus.CANCELLED, START)));
+
+        assertEquals(2, service.listMine(userId).size());
     }
 }
