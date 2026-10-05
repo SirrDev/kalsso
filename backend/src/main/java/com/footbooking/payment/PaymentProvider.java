@@ -16,4 +16,10 @@ public interface PaymentProvider {
 
     /** redirectUrl : la page de paiement vers laquelle on envoie le client. */
     record CheckoutSession(String token, String redirectUrl) {}
+
+    /** Remboursement integral de la transaction identifiee par notre reference. */
+    RefundResult refund(String reference);
+
+    /** accepted : le fournisseur a pris en charge le remboursement ; message : explication en cas de refus. */
+    record RefundResult(boolean accepted, String message) {}
 }
