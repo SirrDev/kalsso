@@ -107,7 +107,7 @@ public class BookingService {
         }
     }
 
-    static boolean isOverlap(DataIntegrityViolationException e) {
+    public static boolean isOverlap(DataIntegrityViolationException e) {
         String message = e.getMostSpecificCause().getMessage();
         return message != null && message.contains("booking_no_overlap");
     }
