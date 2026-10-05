@@ -29,6 +29,9 @@ public class Payment {
     @Column(name = "provider_token")
     private String providerToken;
 
+    @Column(name = "checkout_url")
+    private String checkoutUrl;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
 
@@ -79,4 +82,6 @@ public class Payment {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getPaidAt() { return paidAt; }
     public void setPaidAt(Instant paidAt) { this.paidAt = paidAt; }
+    public String getCheckoutUrl() { return checkoutUrl; }
+    public void setCheckoutUrl(String checkoutUrl) { this.checkoutUrl = checkoutUrl; }
 }

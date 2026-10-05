@@ -14,11 +14,12 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  web:
+    error:
+      include-message: always
 
 server:
   port: 8080
-  error:
-    include-message: always
 
 management:
   endpoints:
@@ -35,6 +36,7 @@ app:
   payment:
     provider: ${PAYMENT_PROVIDER:paytech}
     commission-percent: ${PAYMENT_COMMISSION_PERCENT:3}
+    hold-minutes: ${PAYMENT_HOLD_MINUTES:15}
   paytech:
     base-url: https://paytech.sn/api
     api-key: ${PAYTECH_API_KEY:}
