@@ -1,0 +1,1 @@
+ALTER TABLE payment ADD COLUMN checkout_url VARCHAR(500);
