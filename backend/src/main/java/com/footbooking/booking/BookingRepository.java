@@ -71,4 +71,14 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                                @Param("from") Instant from,
                                @Param("to") Instant to,
                                @Param("now") Instant now);
+
+    /** Confirme une reservation payee (en attente ou deja liberee). 0 ligne = deja dans un etat final. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Booking b set b.status = com.footbooking.booking.BookingStatus.CONFIRMED, b.expiresAt = null
+            where b.id = :id
+              and b.status in (com.footbooking.booking.BookingStatus.PENDING,
+                               com.footbooking.booking.BookingStatus.CANCELLED)
+            """)
+    int confirmPaidBooking(@Param("id") UUID id);
 }
