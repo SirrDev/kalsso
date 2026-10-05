@@ -58,6 +58,15 @@ public class Payment {
     @Column(name = "paid_at")
     private Instant paidAt;
 
+    @Column(name = "refund_attempts", nullable = false)
+    private int refundAttempts;
+
+    @Column(name = "refund_last_attempt_at")
+    private Instant refundLastAttemptAt;
+
+    @Column(name = "refunded_at")
+    private Instant refundedAt;
+
     public UUID getId() { return id; }
     public UUID getBookingId() { return bookingId; }
     public void setBookingId(UUID bookingId) { this.bookingId = bookingId; }
@@ -84,4 +93,10 @@ public class Payment {
     public void setPaidAt(Instant paidAt) { this.paidAt = paidAt; }
     public String getCheckoutUrl() { return checkoutUrl; }
     public void setCheckoutUrl(String checkoutUrl) { this.checkoutUrl = checkoutUrl; }
+    public int getRefundAttempts() { return refundAttempts; }
+    public void setRefundAttempts(int refundAttempts) { this.refundAttempts = refundAttempts; }
+    public Instant getRefundLastAttemptAt() { return refundLastAttemptAt; }
+    public void setRefundLastAttemptAt(Instant refundLastAttemptAt) { this.refundLastAttemptAt = refundLastAttemptAt; }
+    public Instant getRefundedAt() { return refundedAt; }
+    public void setRefundedAt(Instant refundedAt) { this.refundedAt = refundedAt; }
 }

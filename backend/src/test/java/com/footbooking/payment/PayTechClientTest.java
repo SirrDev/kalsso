@@ -5,6 +5,7 @@ import com.footbooking.payment.PaymentProvider.CheckoutRequest;
 import com.footbooking.payment.PaymentProvider.CheckoutSession;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import com.footbooking.payment.PaymentProvider.RefundResult;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -118,5 +119,36 @@ class PayTechClientTest {
     void constructor_rejectsAnUnknownEnvironment() {
         assertThrows(IllegalStateException.class,
                 () -> new PayTechClient("https://paytech.sn/api", "k", "s", "production", IPN, "", ""));
+    }
+
+    // ---------- remboursement ----------
+
+    @Test
+    void parseRefundResponse_success_isAccepted() {
+        RefundResult r = PayTechClient.parseRefundResponse(
+                Map.of("success", 1, "message", "Remboursement initie avec succes"));
+
+        assertTrue(r.accepted());
+    }
+
+    @Test
+    void parseRefundResponse_refusal_keepsTheMessage() {
+        RefundResult r = PayTechClient.parseRefundResponse(
+                Map.of("success", -1, "message", "Le vendeur n'existe pas ou cle api invalide"));
+
+        assertFalse(r.accepted());
+        assertEquals("Le vendeur n'existe pas ou cle api invalide", r.message());
+    }
+
+    @Test
+    void parseRefundResponse_nullBody_returns502() {
+        assertEquals(HttpStatus.BAD_GATEWAY, statusOf(() -> PayTechClient.parseRefundResponse(null)));
+    }
+
+    @Test
+    void refund_withoutKeys_returns503BeforeAnyNetworkCall() {
+        PayTechClient client = new PayTechClient("https://paytech.sn/api", "", "", "test", IPN, "", "");
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, statusOf(() -> client.refund("a1b2c3d4e5f60718")));
     }
 }

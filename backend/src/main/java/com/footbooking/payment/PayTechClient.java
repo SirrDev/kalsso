@@ -12,6 +12,8 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
@@ -85,6 +87,37 @@ public class PayTechClient implements PaymentProvider {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "Le fournisseur de paiement est indisponible");
         }
         return parseResponse(response);
+    }
+
+    @Override
+    public RefundResult refund(String reference) {
+        requireConfigured();
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("ref_command", reference);
+
+        Map<String, Object> response;
+        try {
+            response = http.post()
+                    .uri("/payment/refund-payment")
+                    .header("API_KEY", apiKey)
+                    .header("API_SECRET", apiSecret)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<Map<String, Object>>() {});
+        } catch (RestClientException e) {
+            log.error("Appel de remboursement PayTech en echec : {}", e.getMessage());
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Le fournisseur de paiement est indisponible");
+        }
+        return parseRefundResponse(response);
+    }
+
+    static RefundResult parseRefundResponse(Map<String, Object> response) {
+        if (response == null) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Reponse du fournisseur de paiement invalide");
+        }
+        Object message = response.get("message");
+        return new RefundResult(isSuccess(response.get("success")), message == null ? "" : message.toString());
     }
 
     private void requireConfigured() {
