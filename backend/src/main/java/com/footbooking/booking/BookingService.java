@@ -4,13 +4,12 @@ import com.footbooking.availability.AvailabilityService;
 import com.footbooking.availability.AvailabilityService.BookableSlot;
 import com.footbooking.booking.BookingDtos.BookingResponse;
 import com.footbooking.common.ApiException;
+import com.footbooking.payment.PaymentRefundRequests;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -23,15 +22,18 @@ public class BookingService {
 
     private final BookingRepository bookings;
     private final AvailabilityService availability;
+    private final PaymentRefundRequests refunds;
     private final Clock clock;
     private final long holdMinutes;
     private final long cancelHours;
 
-    public BookingService(BookingRepository bookings, AvailabilityService availability, Clock clock,
+    public BookingService(BookingRepository bookings, AvailabilityService availability,
+                          PaymentRefundRequests refunds, Clock clock,
                           @Value("${app.booking.hold-minutes:10}") long holdMinutes,
                           @Value("${app.booking.cancel-hours:24}") long cancelHours) {
         this.bookings = bookings;
         this.availability = availability;
+        this.refunds = refunds;
         this.clock = clock;
         this.holdMinutes = holdMinutes;
         this.cancelHours = cancelHours;
@@ -87,8 +89,14 @@ public class BookingService {
         Booking b = bookings.findByIdAndUserId(bookingId, userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Reservation introuvable"));
         checkCancellable(b, clock.instant(), cancelHours);
+
+        boolean wasConfirmed = b.getStatus() == BookingStatus.CONFIRMED;
         b.setStatus(BookingStatus.CANCELLED);
         b.setExpiresAt(null);
+        if (wasConfirmed) {
+            // Remboursement integral : le paiement passe en REFUND_PENDING, la tache planifiee s'en charge
+            refunds.requestRefundFor(b.getId());
+        }
         return BookingResponse.from(b);
     }
 

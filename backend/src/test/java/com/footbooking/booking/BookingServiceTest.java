@@ -11,6 +11,8 @@ import org.mockito.Mockito;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import static org.mockito.Mockito.verify;
+import com.footbooking.payment.PaymentRefundRequests;
+import static org.mockito.Mockito.never;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -34,7 +36,8 @@ class BookingServiceTest {
     private final BookingRepository repo = Mockito.mock(BookingRepository.class);
     private final AvailabilityService availability = Mockito.mock(AvailabilityService.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-    private final BookingService service = new BookingService(repo, availability, clock, 10, 24);
+    private final PaymentRefundRequests refunds = Mockito.mock(PaymentRefundRequests.class);
+    private final BookingService service = new BookingService(repo, availability, refunds, clock, 10, 24);
     private final UUID userId = UUID.randomUUID();
     private final UUID fieldId = UUID.randomUUID();
 
@@ -193,5 +196,25 @@ class BookingServiceTest {
                 .thenReturn(List.of(booking(BookingStatus.PENDING, START), booking(BookingStatus.CANCELLED, START)));
 
         assertEquals(2, service.listMine(userId).size());
+    }
+
+    @Test
+    void cancel_confirmedBooking_requestsARefund() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.CONFIRMED, START));
+
+        service.cancel(userId, id);
+
+        verify(refunds).requestRefundFor(any());
+    }
+
+    @Test
+    void cancel_pendingHold_requestsNoRefund() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.PENDING, NOW.plusSeconds(2 * 3600L)));
+
+        service.cancel(userId, id);
+
+        verify(refunds, never()).requestRefundFor(any());
     }
 }
