@@ -37,6 +37,7 @@ services:
       PAYTECH_API_SECRET: ${PAYTECH_API_SECRET:-}
       PAYTECH_ENV: ${PAYTECH_ENV:-test}
       PAYTECH_IPN_URL: ${PAYTECH_IPN_URL:-}
+      FAKE_REFUND_MODE: ${FAKE_REFUND_MODE:-accepted}
     ports:
       - "8080:8080"
 

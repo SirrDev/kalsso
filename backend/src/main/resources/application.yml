@@ -37,6 +37,11 @@ app:
     provider: ${PAYMENT_PROVIDER:paytech}
     commission-percent: ${PAYMENT_COMMISSION_PERCENT:3}
     hold-minutes: ${PAYMENT_HOLD_MINUTES:15}
+    fake-refund-mode: ${FAKE_REFUND_MODE:accepted}
+    refund:
+      max-attempts: ${REFUND_MAX_ATTEMPTS:8}
+      retry-minutes: ${REFUND_RETRY_MINUTES:10}
+      poll-ms: ${REFUND_POLL_MS:60000}
   paytech:
     base-url: https://paytech.sn/api
     api-key: ${PAYTECH_API_KEY:}
