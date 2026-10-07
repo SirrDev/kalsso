@@ -4,6 +4,7 @@ import com.footbooking.availability.AvailabilityService;
 import com.footbooking.availability.AvailabilityService.BookableSlot;
 import com.footbooking.booking.BookingDtos.BookingResponse;
 import com.footbooking.common.ApiException;
+import com.footbooking.notification.NotificationService;
 import com.footbooking.payment.PaymentRefundRequests;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -15,6 +16,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -23,17 +26,19 @@ public class BookingService {
     private final BookingRepository bookings;
     private final AvailabilityService availability;
     private final PaymentRefundRequests refunds;
+    private final NotificationService notifications;
     private final Clock clock;
     private final long holdMinutes;
     private final long cancelHours;
 
     public BookingService(BookingRepository bookings, AvailabilityService availability,
-                          PaymentRefundRequests refunds, Clock clock,
+                          PaymentRefundRequests refunds, NotificationService notifications, Clock clock,
                           @Value("${app.booking.hold-minutes:10}") long holdMinutes,
                           @Value("${app.booking.cancel-hours:24}") long cancelHours) {
         this.bookings = bookings;
         this.availability = availability;
         this.refunds = refunds;
+        this.notifications = notifications;
         this.clock = clock;
         this.holdMinutes = holdMinutes;
         this.cancelHours = cancelHours;
@@ -83,6 +88,12 @@ public class BookingService {
                 .map(BookingResponse::from).toList();
     }
 
+    /** Client de la reservation (vide pour un blocage proprietaire ou une reservation inconnue). */
+    @Transactional(readOnly = true)
+    public Optional<UUID> findUserId(UUID bookingId) {
+        return bookings.findById(bookingId).map(Booking::getUserId);
+    }
+
     @Transactional
     public BookingResponse cancel(UUID userId, UUID bookingId) {
         // 404 si la reservation n'est pas a lui : on ne revele pas son existence
@@ -96,6 +107,11 @@ public class BookingService {
         if (wasConfirmed) {
             // Remboursement integral : le paiement passe en REFUND_PENDING, la tache planifiee s'en charge
             refunds.requestRefundFor(b.getId());
+            // Meme transaction : l'annulation et sa notification passent ensemble ou pas du tout
+            notifications.enqueue(userId, "booking_cancelled",
+                    Map.of("start", b.getStartTime().toString(),
+                            "end", b.getEndTime().toString()),
+                    "booking-" + b.getId() + "-cancelled");
         }
         return BookingResponse.from(b);
     }

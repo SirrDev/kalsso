@@ -4,27 +4,31 @@ import com.footbooking.availability.AvailabilityService;
 import com.footbooking.availability.AvailabilityService.BookableSlot;
 import com.footbooking.booking.BookingDtos.BookingResponse;
 import com.footbooking.common.ApiException;
+import com.footbooking.notification.NotificationService;
+import com.footbooking.payment.PaymentRefundRequests;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
-import static org.mockito.Mockito.verify;
-import com.footbooking.payment.PaymentRefundRequests;
-import static org.mockito.Mockito.never;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.UUID;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class BookingServiceTest {
@@ -37,7 +41,9 @@ class BookingServiceTest {
     private final AvailabilityService availability = Mockito.mock(AvailabilityService.class);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
     private final PaymentRefundRequests refunds = Mockito.mock(PaymentRefundRequests.class);
-    private final BookingService service = new BookingService(repo, availability, refunds, clock, 10, 24);
+    private final NotificationService notifications = Mockito.mock(NotificationService.class);
+    private final BookingService service =
+            new BookingService(repo, availability, refunds, notifications, clock, 10, 24);
     private final UUID userId = UUID.randomUUID();
     private final UUID fieldId = UUID.randomUUID();
 
@@ -216,5 +222,41 @@ class BookingServiceTest {
         service.cancel(userId, id);
 
         verify(refunds, never()).requestRefundFor(any());
+    }
+
+    @Test
+    void cancel_confirmedBooking_enqueuesACancellationNotification() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.CONFIRMED, START));
+
+        service.cancel(userId, id);
+
+        verify(notifications).enqueue(eq(userId), eq("booking_cancelled"), anyMap(), anyString());
+    }
+
+    @Test
+    void cancel_pendingHold_enqueuesNoNotification() {
+        UUID id = UUID.randomUUID();
+        owns(id, booking(BookingStatus.PENDING, NOW.plusSeconds(2 * 3600L)));
+
+        service.cancel(userId, id);
+
+        verify(notifications, never()).enqueue(any(), anyString(), anyMap(), anyString());
+    }
+
+    @Test
+    void findUserId_returnsTheClientOfTheBooking() {
+        UUID id = UUID.randomUUID();
+        when(repo.findById(id)).thenReturn(Optional.of(booking(BookingStatus.CONFIRMED, START)));
+
+        assertEquals(Optional.of(userId), service.findUserId(id));
+    }
+
+    @Test
+    void findUserId_isEmptyForAnOwnerBlock() {
+        UUID id = UUID.randomUUID();
+        when(repo.findById(id)).thenReturn(Optional.of(new Booking()));
+
+        assertTrue(service.findUserId(id).isEmpty());
     }
 }

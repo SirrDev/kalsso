@@ -1,5 +1,7 @@
 package com.footbooking.payment;
 
+import com.footbooking.booking.BookingService;
+import com.footbooking.notification.NotificationService;
 import com.footbooking.payment.PaymentProvider.RefundResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +14,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -24,15 +27,20 @@ public class RefundService {
 
     private final PaymentRepository payments;
     private final PaymentProvider provider;
+    private final BookingService bookingService;
+    private final NotificationService notifications;
     private final Clock clock;
     private final int maxAttempts;
     private final long retryMinutes;
 
-    public RefundService(PaymentRepository payments, PaymentProvider provider, Clock clock,
+    public RefundService(PaymentRepository payments, PaymentProvider provider,
+                         BookingService bookingService, NotificationService notifications, Clock clock,
                          @Value("${app.payment.refund.max-attempts:8}") int maxAttempts,
                          @Value("${app.payment.refund.retry-minutes:10}") long retryMinutes) {
         this.payments = payments;
         this.provider = provider;
+        this.bookingService = bookingService;
+        this.notifications = notifications;
         this.clock = clock;
         this.maxAttempts = maxAttempts;
         this.retryMinutes = retryMinutes;
@@ -84,6 +92,13 @@ public class RefundService {
             p.setStatus(PaymentStatus.REFUNDED);
             p.setRefundedAt(now);
             log.info("Paiement {} rembourse", p.getProviderRef());
+            // Meme transaction que le passage a REFUNDED. Entrees toujours valides (cle courte, modele fixe,
+            // client non nul) : l'ecriture de la notification ne doit jamais annuler un remboursement accepte.
+            bookingService.findUserId(p.getBookingId()).ifPresent(userId ->
+                    notifications.enqueue(userId, "payment_refunded",
+                            Map.of("amount", p.getAmount().toPlainString(),
+                                    "currency", p.getCurrency()),
+                            "payment-" + p.getId() + "-refunded"));
             return Outcome.REFUNDED;
         }
         if (p.getRefundAttempts() >= maxAttempts) {
