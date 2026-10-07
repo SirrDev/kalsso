@@ -1,6 +1,8 @@
 package com.footbooking.payment;
 
+import com.footbooking.booking.BookingService;
 import com.footbooking.common.ApiException;
+import com.footbooking.notification.NotificationService;
 import com.footbooking.payment.PaymentProvider.RefundResult;
 import com.footbooking.payment.RefundService.Outcome;
 import org.junit.jupiter.api.Test;
@@ -8,6 +10,7 @@ import org.mockito.Mockito;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -17,6 +20,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -28,17 +33,23 @@ class RefundServiceTest {
 
     private final PaymentRepository payments = Mockito.mock(PaymentRepository.class);
     private final PaymentProvider provider = Mockito.mock(PaymentProvider.class);
+    private final BookingService bookingService = Mockito.mock(BookingService.class);
+    private final NotificationService notifications = Mockito.mock(NotificationService.class);
     private final RefundService service =
-            new RefundService(payments, provider, Clock.fixed(NOW, ZoneOffset.UTC), 3, 10);
+            new RefundService(payments, provider, bookingService, notifications,
+                    Clock.fixed(NOW, ZoneOffset.UTC), 3, 10);
     private final UUID id = UUID.randomUUID();
+    private final UUID userId = UUID.randomUUID();
 
     private Payment pending(int attempts, Instant lastAttempt) {
         Payment p = new Payment();
         p.setProviderRef("a1b2c3d4e5f60718a1b2c3d4e5f60718");
         p.setStatus(PaymentStatus.REFUND_PENDING);
+        p.setAmount(new BigDecimal("5000.00"));
         p.setRefundAttempts(attempts);
         p.setRefundLastAttemptAt(lastAttempt);
         when(payments.findForUpdateById(id)).thenReturn(Optional.of(p));
+        when(bookingService.findUserId(any())).thenReturn(Optional.of(userId));
         return p;
     }
 
@@ -155,5 +166,25 @@ class RefundServiceTest {
                 .thenReturn(List.of(id));
 
         assertEquals(List.of(id), service.dueIds());
+    }
+
+    @Test
+    void accepted_enqueuesARefundNotification() {
+        pending(0, null);
+        providerAnswers(true);
+
+        service.attempt(id, false);
+
+        verify(notifications).enqueue(eq(userId), eq("payment_refunded"), anyMap(), anyString());
+    }
+
+    @Test
+    void refusedOrGivenUp_enqueuesNoNotification() {
+        pending(2, null);
+        providerAnswers(false);
+
+        service.attempt(id, false);
+
+        verify(notifications, never()).enqueue(any(), anyString(), anyMap(), anyString());
     }
 }
