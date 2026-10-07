@@ -1,227 +1,168 @@
-# Taches guidees
+# Tâches guidées
 
-Chaque tache = une branche + une PR. Suivre l'ordre : les taches dependent des precedentes.
-Format : **objectif, etapes, criteres d'acceptation, test manuel**.
+État : octobre 2026 — 167 tests — migrations Flyway V1 à V6.
+Chaque tâche = une branche + une PR. Format : objectif, étapes, critères d'acceptation, test manuel.
 
-Etat : B0 et B1 sont termines (voir `DEVELOPMENT_STEPS.txt`).
+## Méthode de travail (à suivre pour chaque tâche)
 
----
+1. `git checkout main`, `git pull`, puis `git checkout -b feature/<nom>` **en premier**.
+2. `git branch --show-current` : vérifier le nom avant de coder ou de commiter.
+3. Coder une étape, puis la vérifier. Compter les `@Test` du fichier modifié, puis le total Maven.
+4. `git status --short` avant chaque commit : jamais `.env`, jamais de clé réelle.
+5. PR, attendre la CI verte (`build-test`), lire `Tests run: N` dans le résumé, fusionner.
+6. `git checkout main`, `git pull`, puis seulement `git branch -d <branche>`.
 
-## B2-1 · Entites Venue et Field
-**Branche** `feature/B2-1-entities` · **Labels** `backend` `B2` `mvp`
-
-**Objectif** Mapper les tables `venue` et `field` (deja creees par la migration V1).
-
-**Etapes**
-1. Creer les enums `VenueStatus` (PENDING, ACTIVE, SUSPENDED), `FieldFormat` (FIVE, SEVEN, ELEVEN), `FieldSurface` (SYNTHETIC, NATURAL, INDOOR) dans les packages `venue/` et `field/`.
-2. Creer l'entite `Venue` (champs = colonnes de la table, `ownerId` en `UUID`, pas de relation JPA vers `User` pour rester decouple).
-3. Creer l'entite `Field` avec `venueId`.
-4. Creer `VenueRepository` (`findByOwnerId`) et `FieldRepository` (`findByVenueId`).
-5. Verifier le demarrage : `ddl-auto: validate` doit passer sans erreur.
-
-**Criteres d'acceptation**
-- [ ] L'application demarre, Hibernate valide le schema
-- [ ] Les enums sont stockes en `STRING`
+Rappels : toute évolution de schéma = nouvelle migration (`Vn+1`), jamais une ancienne modifiée.
+Les fichiers de test vont dans `src/test`, dans le même package que le code testé.
+Pour les tests locaux : `. .\scripts\dev-helpers.ps1` puis `Init`.
 
 ---
 
-## B2-2 · CRUD Venue (proprietaire)
-**Branche** `feature/B2-2-venue-crud`
+## Déjà fait (résumé)
 
-**Objectif** Un `OWNER` cree et gere ses complexes.
-
-**Etapes**
-1. `VenueDtos` : `CreateVenueRequest` (name, address, city, description, phone, latitude, longitude avec validations) et `VenueResponse`.
-2. `VenueService` :
-   - `create(ownerId, req)` : statut initial `PENDING`
-   - `listMine(ownerId)`
-   - `getOwned(ownerId, venueId)` : **leve 404** si le complexe n'appartient pas a l'utilisateur (ne pas reveler son existence)
-   - `update`, `delete` (refuser si des reservations futures existent)
-3. `VenueController` sous `/api/owner/venues`, protege par `@PreAuthorize("hasRole('OWNER')")`.
-4. Recuperer l'id utilisateur depuis `Authentication.getName()` (c'est le `subject` du JWT).
-5. Ajouter `/api/owner/**` dans `SecurityConfig` (hasAnyRole OWNER, STAFF au besoin).
-
-**Criteres d'acceptation**
-- [ ] OWNER A ne peut ni lire ni modifier le complexe de OWNER B (404)
-- [ ] CLIENT recoit 403 sur `/api/owner/venues`
-- [ ] Validation : nom vide -> 400 avec details par champ
-
-**Test manuel** : inscrire 2 owners, creer un complexe avec le token 1, tenter de le lire avec le token 2.
+| Bloc | Contenu |
+|---|---|
+| B0 | Docker, Flyway, Actuator, Swagger |
+| B1 (partiel) | Inscription, connexion, JWT, rôles |
+| B2 | Complexes, terrains, horaires, jours de fermeture, tarifs, fuseau horaire |
+| B3 | Générateur de créneaux, disponibilités publiques, recherche, validation des complexes par un admin |
+| B4 | Réservation avec blocage de 10 min, nettoyage planifié, annulation à 24 h, réservations et blocages côté propriétaire, statut `BOOKED` |
+| B5 | Paiement PayTech (faux fournisseur), commission 3 %, notification signée HMAC, paiement tardif, remboursement intégral automatique, reprise admin |
 
 ---
 
-## B2-3 · CRUD Field
-**Branche** `feature/B2-3-field-crud`
+## B5-8 · Validation avec le bac à sable PayTech
 
-**Etapes**
-1. `FieldDtos` (name, format, surface, slotMinutes 30/60/90/120).
-2. `FieldService` : verifier a chaque appel que `venue.ownerId == currentUser` (reutiliser `VenueService.getOwned`).
-3. `FieldController` : `/api/owner/venues/{venueId}/fields` (POST, GET) et `/api/owner/fields/{fieldId}` (GET, PUT, DELETE).
-4. Suppression douce : mettre `active = false` plutot que supprimer si des reservations existent.
+**Prérequis** : compte PayTech et clés de test. Ne jamais coller les clés dans un fichier commité ni dans une conversation.
+**Branche** `feature/B5-8-paytech-sandbox`
 
-**Criteres d'acceptation**
-- [ ] Impossible de creer un terrain dans le complexe d'un autre
-- [ ] `slotMinutes <= 0` refuse
+**Objectif** : confirmer les hypothèses qu'on n'a pas pu vérifier sans compte.
 
----
+**Étapes**
+1. Mettre les clés dans `.env` (ignoré par Git) : `PAYTECH_API_KEY`, `PAYTECH_API_SECRET`, `PAYTECH_ENV=test`, retirer `PAYMENT_PROVIDER=fake`.
+2. Exposer l'API en HTTPS avec un tunnel (ngrok ou cloudflared) et renseigner `PAYTECH_IPN_URL` (`https://…/api/payments/paytech/ipn`).
+3. Créer une réservation, appeler `POST /api/bookings/{id}/pay`, ouvrir l'URL renvoyée, payer avec le compte de test.
+4. Lire dans les logs de l'API ce que PayTech envoie vraiment.
 
-## B2-4 · Horaires d'ouverture et jours de fermeture
-**Branche** `feature/B2-4-opening-hours`
-
-**Etapes**
-1. Entites `OpeningHours`, `ClosedDay` + repositories.
-2. Endpoint `PUT /api/owner/fields/{id}/opening-hours` : remplace la semaine complete (liste de `{dayOfWeek, openTime, closeTime}`).
-3. Validation metier : `closeTime > openTime`, pas de chevauchement dans un meme jour.
-4. Endpoints `POST/DELETE /api/owner/fields/{id}/closed-days`.
-
-**Criteres d'acceptation**
-- [ ] Deux plages qui se chevauchent le meme jour -> 400
-- [ ] Un jour sans plage = ferme ce jour-la
+**À constater (et corriger si besoin)**
+- [ ] La notification arrive en formulaire (et non en JSON).
+- [ ] `hmac_compute` est présent et notre vérification l'accepte.
+- [ ] Le montant annoncé en mode test (réel, ou 100 à 150 CFA débités).
+- [ ] Le comportement de `POST /payment/refund-payment` et la notification de remboursement.
+- [ ] Les URL `success_url` et `cancel_url` : à ajouter à `docker-compose.yml` si nécessaire.
 
 ---
 
-## B2-5 · Regles de tarification
-**Branche** `feature/B2-5-pricing`
+## B6 · Notifications WhatsApp et SMS
 
-**Etapes**
-1. Entite `PricingRule` (jour optionnel, plage horaire, prix, devise).
-2. Endpoints de gestion sous `/api/owner/fields/{id}/pricing`.
-3. Methode `PricingService.priceFor(fieldId, LocalDateTime start, int minutes)` : choisit la regle la plus specifique (jour precis > tous les jours).
-4. Tests unitaires : semaine/week-end, creneau a cheval sur deux tranches (decider : prix du debut du creneau, le documenter).
+**À lancer tôt, hors code** : compte Meta Business, modèles de messages WhatsApp à faire approuver (plusieurs jours), choix du fournisseur SMS (l'API SMS de PayTech est une option, prix et fiabilité à vérifier).
 
-**Criteres d'acceptation**
-- [ ] Prix 5000 XOF en semaine 8h-17h, 8000 XOF le soir : le calcul renvoie le bon prix
-- [ ] Aucun prix trouve -> erreur claire (le terrain n'est pas reservable)
+### B6-1 · Interface et modèle
+**Branche** `feature/B6-1-notification-model`
+1. L'entité `Notification` existe déjà en base (table de la migration V1). La mapper, avec `NotificationStatus` (`PENDING`, `SENT`, `FAILED`) et `NotificationChannel` (`WHATSAPP`, `SMS`).
+2. Migration `V7` : colonne `dedupe_key` unique (évite les doublons, indispensable pour les rappels) et colonne d'erreur.
+3. Interface `MessageSender` (canal, destinataire, modèle, paramètres) et un faux envoi de test, actif seulement si une propriété le demande.
+- Critères : l'application démarre, la migration est appliquée, tests unitaires du mapping.
 
----
+### B6-2 · Boîte d'envoi (outbox)
+**Branche** `feature/B6-2-outbox`
+1. Un service `NotificationService.enqueue(...)` qui écrit dans la table, **dans la même transaction** que l'événement métier (réservation confirmée, annulée, remboursée).
+2. Brancher : confirmation de réservation (après paiement), annulation, remboursement effectué.
+- Critères : si la transaction échoue, aucune notification n'est créée ; un événement répété ne crée pas de doublon (`dedupe_key`).
 
-## B3-1 · Calcul des creneaux disponibles
-**Branche** `feature/B3-1-availability`
+### B6-3 · Worker d'envoi
+**Branche** `feature/B6-3-worker`
+1. Tâche planifiée qui envoie les `PENDING` dont `send_at` est passé, avec verrou de ligne (comme pour les remboursements).
+2. Réessais espacés, nombre maximal de tentatives, passage à `FAILED` avec message d'erreur visible dans les logs.
+- Critères : un envoi qui échoue est retenté ; après abandon, il reste visible ; deux workers ne l'envoient pas deux fois.
 
-**Objectif** Coeur du produit : lister les creneaux libres d'un terrain pour une date.
+### B6-4 · Consentement et destinataires
+**Branche** `feature/B6-4-recipients`
+1. WhatsApp seulement si `whatsapp_opt_in` est vrai et le téléphone renseigné ; sinon SMS.
+2. Repli sur SMS si l'envoi WhatsApp échoue.
+3. Jamais de numéro de téléphone ni de message complet dans les logs.
 
-**Etapes**
-1. Creer `AvailabilityService.slots(fieldId, LocalDate date)`.
-2. Algorithme :
-   - a. Si la date est un `ClosedDay` -> liste vide
-   - b. Recuperer les `OpeningHours` du jour de la semaine
-   - c. Decouper chaque plage en creneaux de `slotMinutes`
-   - d. Convertir en `Instant` avec le fuseau du complexe (ajouter `timezone` au venue, defaut `Africa/Dakar`, via migration V2)
-   - e. Charger les `booking` actifs (PENDING non expires, CONFIRMED) du jour
-   - f. Marquer chaque creneau `AVAILABLE`, `BOOKED` ou `PAST`, avec son prix
-3. Endpoint public `GET /api/fields/{id}/availability?date=2026-10-10` (ajouter a `permitAll`).
-4. Tests unitaires sur l'algorithme (sans base) : horaires 18h-23h, creneau 60 min, une reservation a 20h.
+### B6-5 · Rappels
+**Branche** `feature/B6-5-reminders`
+1. Tâche planifiée : réservations `CONFIRMED` dont le début est dans environ 24 h, puis dans environ 2 h.
+2. Idempotence par `dedupe_key` (`booking-<id>-reminder-24h`).
+3. Heure du rappel exprimée dans le fuseau du complexe.
 
-**Criteres d'acceptation**
-- [ ] 5 creneaux generes, celui de 20h est `BOOKED`
-- [ ] Jour de fermeture -> liste vide
-- [ ] Creneaux passes marques `PAST`
-
----
-
-## B3-2 · Recherche de terrains
-**Branche** `feature/B3-2-search`
-
-**Etapes**
-1. Endpoint public `GET /api/fields/search?city=&format=&surface=&date=&maxPrice=`.
-2. Pagination (`Pageable`) et tri.
-3. Ne renvoyer que les terrains `active` dont le complexe est `ACTIVE`.
-4. Index SQL sur `venue(city)` (existe deja) ; ajouter ce qui manque via V2.
+### B6-6 · Vrais fournisseurs
+**Branche** `feature/B6-6-providers`
+1. Implémentation WhatsApp (Cloud API Meta ou BSP) avec les modèles approuvés.
+2. Implémentation SMS du fournisseur choisi.
+3. Clés dans `.env` seulement ; fournisseur choisi par configuration, `fake` jamais en production.
 
 ---
 
-## B4-1 · Creation de reservation avec hold
-**Branche** `feature/B4-1-booking-create`
+## B1 · Suite de l'authentification
 
-**Etapes**
-1. Entite `Booking`, `BookingStatus`, `BookingSource`.
-2. `BookingService.create(userId, fieldId, start)` dans une `@Transactional` :
-   - verifier que le creneau est dans les creneaux generes par `AvailabilityService`
-   - calculer le prix via `PricingService`
-   - inserer en `PENDING` avec `expires_at = now + 10 min`
-3. Capturer `DataIntegrityViolationException` et renvoyer **409** « Ce creneau vient d'etre pris » (la contrainte `booking_no_overlap` fait foi).
-4. Endpoint `POST /api/bookings` (role CLIENT).
-
-**Criteres d'acceptation**
-- [ ] Deux requetes simultanees sur le meme creneau : une 201, une 409
-- [ ] Creneau hors horaires -> 400
+| Tâche | Détail | Dépend de |
+|---|---|---|
+| B1-4 Refresh token | jeton d'accès court + jeton de rafraîchissement révocable | rien |
+| B1-5 Mot de passe oublié | jeton à usage unique, durée limitée, envoyé par SMS ou email | B6 |
+| B1-6 Vérification du téléphone | code OTP à 6 chiffres, expiration, limite de tentatives | B6 |
+| B1-7 Admin au démarrage | création du compte ADMIN depuis des variables d'environnement, remplace la promotion manuelle en base | rien |
+| B1-8 Limitation de débit | sur login, inscription, OTP | rien |
 
 ---
 
-## B4-2 · Liberation des holds expires
-**Branche** `feature/B4-2-hold-expiry`
+## B7 · Tableau de bord et administration
 
-**Etapes**
-1. `@EnableScheduling` sur la classe principale.
-2. Job `@Scheduled(fixedDelay = 60_000)` : passe en `CANCELLED` les `PENDING` dont `expires_at < now`.
-3. Requete JPQL `@Modifying` dans `BookingRepository`.
-4. Test d'integration avec horloge injectee (`Clock`) plutot que `Instant.now()`.
+### B7-1 · Statistiques du propriétaire
+- Revenus nets sur une période, par terrain.
+- **Compter uniquement les paiements `SUCCEEDED`** (jamais `REFUNDED`).
+- Taux de remplissage = créneaux réservés / créneaux ouverts.
+- Critères : un paiement remboursé disparaît du revenu ; les dates sont lues dans le fuseau du complexe.
 
----
+### B7-2 · Personnel (STAFF)
+- Lier un utilisateur STAFF à un complexe ; droits limités (voir et bloquer des créneaux, pas les revenus).
+- Réutiliser le contrôle de propriété existant.
 
-## B4-3 · Annulation, blocage manuel, consultation
-**Branche** `feature/B4-3-booking-manage`
-
-**Etapes**
-1. `POST /api/bookings/{id}/cancel` (client : seulement ses reservations, delai minimum configurable).
-2. `GET /api/bookings/mine`, `GET /api/owner/bookings?from=&to=&fieldId=`.
-3. `POST /api/owner/fields/{id}/blocks` : cree un `Booking` source `BLOCK` (maintenance, reservation telephonique).
-4. Calcul du remboursement selon la politique (placeholder jusqu'a B5).
+### B7-3 · Administration
+- Liste des paiements, rapport des commissions, gestion des litiges.
 
 ---
 
-## B4-4 · Test de concurrence
-**Branche** `feature/B4-4-concurrency-test`
+## B8 · Qualité et production
 
-**Etapes**
-1. Ajouter Testcontainers (`org.testcontainers:postgresql`, `junit-jupiter`) au `pom.xml` (scope test).
-2. Test : 20 threads reservent le meme creneau (`ExecutorService` + `CountDownLatch`).
-3. Assertion : exactement 1 succes, 19 conflits, 1 seule ligne en base.
-
----
-
-## B5 · Paiement (resume)
-1. **B5-1** Interface `PaymentProvider` + implementation du provider choisi (Wave / Orange Money / CinetPay).
-2. **B5-2** `POST /api/bookings/{id}/pay` : cree un `payment` `INITIATED`, renvoie l'URL de paiement.
-3. **B5-3** Webhook `POST /api/webhooks/{provider}` : verifier la signature, idempotence via `UNIQUE(provider, provider_ref)`, passer `booking` en `CONFIRMED`.
-4. **B5-4** Commission plateforme et remboursements.
-
-## B6 · Notifications (resume)
-1. **B6-1** Interface `NotificationChannel`, ecriture dans la table `notification` (outbox) a chaque evenement.
-2. **B6-2** Worker `@Scheduled` qui envoie les `PENDING`, avec reessais et backoff.
-3. **B6-3** Canal WhatsApp (templates Meta : confirmation, rappel, annulation) + canal SMS + fallback.
-4. **B6-4** Rappels J-1 et H-2, respect de `whatsapp_opt_in`.
-
-## B7 · Dashboard et admin (resume)
-1. Statistiques : revenus par periode, taux de remplissage par terrain.
-2. Gestion du personnel (`STAFF` lie a un complexe).
-3. `/api/admin/**` : validation des complexes (`PENDING` -> `ACTIVE`), suspension.
-
-## B8 · Production (resume)
-Rate limiting, logs structures, sauvegardes, HTTPS (Traefik/Nginx), CD vers le serveur.
+- [ ] **Test de concurrence** : 20 threads réservent le même créneau, exactement une réussite (Testcontainers, vraie base PostgreSQL ; Docker est disponible dans la CI GitHub).
+- [ ] Vérification dans la CI que le nombre de tests ne baisse pas.
+- [ ] Désactiver Swagger et api-docs en production (`springdoc.api-docs.enabled=false`).
+- [ ] Supprimer l'utilisateur généré par Spring (message au démarrage).
+- [ ] Unifier le format d'erreur (les 400 produits par Spring n'utilisent pas notre format).
+- [ ] `docker-compose.prod.yml` : variables PayTech, `PAYMENT_PROVIDER=paytech`, URL de notification en HTTPS, `PAYTECH_ENV=prod` seulement après activation du compte.
+- [ ] `.env.example` : documenter les variables de paiement avec des valeurs vides.
+- [ ] Logs structurés, sauvegardes de la base (`pg_dump` planifié), HTTPS (Caddy prêt).
+- [ ] Activer le déploiement SSH (`DEPLOY_ENABLED`, voir `docs/CICD.md`), avec approbation manuelle sur l'environnement `production`.
+- [ ] Upload des photos de terrain (S3 ou MinIO), laissé de côté jusqu'ici.
 
 ---
 
-## F0 · Socle frontend
+## Frontend
+
+### F0 · Socle
 **Branche** `feature/F0-frontend-setup`
-
-**Etapes**
 1. `npm create vite@latest frontend -- --template react-ts`
 2. Installer : `react-router-dom @tanstack/react-query axios react-hook-form zod @hookform/resolvers tailwindcss vite-plugin-pwa react-i18next`
-3. Configurer `vite-plugin-pwa` (manifest, icones 192/512, `registerType: 'autoUpdate'`).
-4. Client axios avec intercepteur ajoutant `Authorization: Bearer`, redirection sur 401.
-5. `frontend/Dockerfile` (build Node puis Nginx) et service `web` dans `docker-compose.yml`.
+3. `vite-plugin-pwa` : manifeste, icônes 192 et 512, mise à jour automatique.
+4. Client axios avec le jeton, redirection sur 401, gestion du format d'erreur de l'API.
+5. `frontend/Dockerfile` (build Node puis Nginx), service `web` dans `docker-compose.yml`.
+6. Recréer `.github/workflows/frontend-ci.yml`. Attention : `hashFiles` ne fonctionne qu'au niveau des étapes, pas du job.
+- Critères : `npm run dev` fonctionne, la PWA est installable, un appel à `/actuator/health` passe (CORS).
 
-**Criteres d'acceptation**
-- [ ] `npm run dev` affiche la page d'accueil
-- [ ] Lighthouse detecte une PWA installable
-- [ ] Un appel a `/actuator/health` depuis le front fonctionne (CORS ok)
+### F1 · Authentification
+Pages d'inscription et de connexion, routes protégées par rôle, stockage du jeton.
 
-## F1 · Authentification
-Pages inscription / connexion, contexte d'auth, routes protegees par role (`RequireRole`), stockage du token (memoire + refresh plus tard).
+### F2 · Parcours client
+Recherche et filtres, fiche terrain, calendrier de créneaux (statuts `AVAILABLE`, `BOOKED`, `PAST`, `NO_PRICE`), réservation, redirection vers la page de paiement PayTech, retour (`success_url` / `cancel_url`), mes réservations, annulation.
 
-## F2 · Parcours client
-Recherche + filtres, fiche terrain, calendrier de creneaux, tunnel de reservation, mes reservations.
+### F3 · Espace propriétaire
+Complexes et terrains, horaires, tarifs, calendrier des réservations, blocage de créneaux, tableau de bord.
 
-## F3 · Espace proprietaire
-Gestion complexes/terrains, formulaire horaires et tarifs, calendrier FullCalendar des reservations, blocage de creneaux, dashboard.
+### F4 · PWA
+Installation, consultation hors ligne, performances (Lighthouse).
+
+### F5 · Tests et CI
+Vitest, Playwright, intégration à la CI.
