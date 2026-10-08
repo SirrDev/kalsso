@@ -42,6 +42,11 @@ app:
       max-attempts: ${REFUND_MAX_ATTEMPTS:8}
       retry-minutes: ${REFUND_RETRY_MINUTES:10}
       poll-ms: ${REFUND_POLL_MS:60000}
+  notification:
+    fake-mode: ${NOTIFICATION_FAKE_MODE:accepted}
+    max-attempts: ${NOTIFICATION_MAX_ATTEMPTS:5}
+    retry-minutes: ${NOTIFICATION_RETRY_MINUTES:5}
+    poll-ms: ${NOTIFICATION_POLL_MS:30000}
   paytech:
     base-url: https://paytech.sn/api
     api-key: ${PAYTECH_API_KEY:}
