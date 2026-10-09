@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-// Actif seulement si un MessageSender est configure (app.notification.sender defini)
+// Actif seulement si un MessageSender est configure (app.notification.sender non vide)
 @Service
 @ConditionalOnExpression("'${app.notification.sender:}' != ''")
 public class NotificationDispatcher {
@@ -73,11 +73,25 @@ public class NotificationDispatcher {
             return fail(n, "destinataire sans telephone");
         }
 
+        // Un repli deja decide (canal SMS en base) n'est jamais remis en WhatsApp
+        if (n.getChannel() == NotificationChannel.WHATSAPP
+                && !contact.map(UserContact::whatsappOptIn).orElse(false)) {
+            n.setChannel(NotificationChannel.SMS);
+        }
+
         try {
             sender.send(n.getChannel(), phone, n.getTemplate(), PayloadJson.parse(n.getPayload()));
         } catch (RuntimeException e) {
-            // Message fixe : le message de l'exception pourrait contenir un numero
-            log.warn("Envoi {} echoue (tentative {}) : {}", n.getId(), n.getAttempts(), e.getClass().getSimpleName());
+            // Jamais le message de l'exception : il pourrait contenir un numero
+            log.warn("Envoi {} par {} echoue (tentative {}) : {}",
+                    n.getId(), n.getChannel(), n.getAttempts(), e.getClass().getSimpleName());
+            if (n.getChannel() == NotificationChannel.WHATSAPP) {
+                // Repli : un seul echec WhatsApp, nouvel essai immediat en SMS
+                n.setChannel(NotificationChannel.SMS);
+                n.setLastError("echec WhatsApp, repli SMS");
+                n.setSendAt(now);
+                return Outcome.RETRY_LATER;
+            }
             if (n.getAttempts() >= maxAttempts) {
                 return fail(n, "echec d'envoi apres " + n.getAttempts() + " tentatives");
             }
