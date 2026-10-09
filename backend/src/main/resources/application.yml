@@ -49,6 +49,9 @@ app:
     max-attempts: ${NOTIFICATION_MAX_ATTEMPTS:5}
     retry-minutes: ${NOTIFICATION_RETRY_MINUTES:5}
     poll-ms: ${NOTIFICATION_POLL_MS:30000}
+  admin:
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
   paytech:
     base-url: https://paytech.sn/api
     api-key: ${PAYTECH_API_KEY:}
