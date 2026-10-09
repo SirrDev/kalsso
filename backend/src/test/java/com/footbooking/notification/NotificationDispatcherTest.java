@@ -66,6 +66,7 @@ class NotificationDispatcherTest {
     @Test
     void failure_staysPendingAndPostponesTheNextTry() {
         Notification n = pending(0, NOW.minusSeconds(10));
+        n.setChannel(NotificationChannel.SMS);
         doThrow(new MessageSendException("refus")).when(sender).send(any(), anyString(), anyString(), anyMap());
 
         assertEquals(Outcome.RETRY_LATER, dispatcher.dispatch(id));
@@ -78,6 +79,7 @@ class NotificationDispatcherTest {
     @Test
     void delayGrowsWithTheAttemptCount() {
         Notification n = pending(1, NOW.minusSeconds(10));
+        n.setChannel(NotificationChannel.SMS);
         doThrow(new MessageSendException("refus")).when(sender).send(any(), anyString(), anyString(), anyMap());
 
         dispatcher.dispatch(id);
@@ -89,6 +91,7 @@ class NotificationDispatcherTest {
     @Test
     void lastAllowedAttempt_marksFailed() {
         Notification n = pending(2, NOW.minusSeconds(10));
+        n.setChannel(NotificationChannel.SMS);
         doThrow(new MessageSendException("refus")).when(sender).send(any(), anyString(), anyString(), anyMap());
 
         assertEquals(Outcome.FAILED, dispatcher.dispatch(id));
@@ -99,6 +102,7 @@ class NotificationDispatcherTest {
     @Test
     void errorMessage_neverContainsThePhoneNumber() {
         Notification n = pending(2, NOW.minusSeconds(10));
+        n.setChannel(NotificationChannel.SMS);
         doThrow(new MessageSendException("echec pour +221700000000")).when(sender)
                 .send(any(), anyString(), anyString(), anyMap());
 
@@ -146,5 +150,50 @@ class NotificationDispatcherTest {
         when(repo.findDueIds(eq(NOW), any(Pageable.class))).thenReturn(List.of(id));
 
         assertEquals(List.of(id), dispatcher.dueIds());
+    }
+
+    @Test
+    void noOptIn_sendsBySmsAndRecordsTheChannel() {
+        Notification n = pending(0, NOW.minusSeconds(10));
+        when(contacts.find(userId)).thenReturn(Optional.of(new UserContact("+221700000000", false)));
+
+        assertEquals(Outcome.SENT, dispatcher.dispatch(id));
+        assertEquals(NotificationChannel.SMS, n.getChannel());
+        verify(sender).send(eq(NotificationChannel.SMS), eq("+221700000000"), anyString(), anyMap());
+    }
+
+    @Test
+    void whatsappFailure_fallsBackToSmsWithoutDelay() {
+        Notification n = pending(0, NOW.minusSeconds(10));
+        doThrow(new MessageSendException("refus")).when(sender)
+                .send(eq(NotificationChannel.WHATSAPP), anyString(), anyString(), anyMap());
+
+        assertEquals(Outcome.RETRY_LATER, dispatcher.dispatch(id));
+        assertEquals(NotificationChannel.SMS, n.getChannel());
+        assertEquals(NotificationStatus.PENDING, n.getStatus());
+        assertEquals(NOW, n.getSendAt());
+        assertEquals("echec WhatsApp, repli SMS", n.getLastError());
+    }
+
+    @Test
+    void afterFallback_smsSuccessMarksSent() {
+        Notification n = pending(1, NOW.minusSeconds(10));
+        n.setChannel(NotificationChannel.SMS);
+
+        assertEquals(Outcome.SENT, dispatcher.dispatch(id));
+        assertEquals(NotificationStatus.SENT, n.getStatus());
+        verify(sender).send(eq(NotificationChannel.SMS), anyString(), anyString(), anyMap());
+    }
+
+    @Test
+    void smsFailure_usesTheNormalRetryDelay() {
+        Notification n = pending(0, NOW.minusSeconds(10));
+        n.setChannel(NotificationChannel.SMS);
+        doThrow(new MessageSendException("refus")).when(sender)
+                .send(eq(NotificationChannel.SMS), anyString(), anyString(), anyMap());
+
+        assertEquals(Outcome.RETRY_LATER, dispatcher.dispatch(id));
+        assertEquals(NotificationChannel.SMS, n.getChannel());
+        assertEquals(NOW.plusSeconds(5 * 60), n.getSendAt());
     }
 }

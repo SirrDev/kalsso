@@ -37,4 +37,18 @@ class FakeMessageSenderTest {
         org.junit.jupiter.api.Assertions.assertEquals(0, n.getAttempts());
         org.junit.jupiter.api.Assertions.assertEquals("{}", n.getPayload());
     }
+
+    @Test
+    void modeWhatsappRejected_refuseWhatsappMaisAccepteSms() {
+        FakeMessageSender sender = new FakeMessageSender("whatsapp-rejected");
+        assertThrows(MessageSendException.class, () ->
+                sender.send(NotificationChannel.WHATSAPP, "+221700000000", "booking_confirmed", PARAMS));
+        assertDoesNotThrow(() ->
+                sender.send(NotificationChannel.SMS, "+221700000000", "booking_confirmed", PARAMS));
+    }
+
+    @Test
+    void modeWhatsappRejected_estAccepteALaConstruction() {
+        assertDoesNotThrow(() -> new FakeMessageSender("whatsapp-rejected"));
+    }
 }
