@@ -81,4 +81,14 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
                                com.footbooking.booking.BookingStatus.CANCELLED)
             """)
     int confirmPaidBooking(@Param("id") UUID id);
+
+    /** Reservations CONFIRMED avec client dont le debut tombe dans [from, to[ (pour les rappels). */
+    @Query("""
+            select b from Booking b
+            where b.status = com.footbooking.booking.BookingStatus.CONFIRMED
+              and b.userId is not null
+              and b.startTime >= :from and b.startTime < :to
+            order by b.startTime
+            """)
+    List<Booking> findConfirmedStartingBetween(@Param("from") Instant from, @Param("to") Instant to);
 }

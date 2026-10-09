@@ -77,6 +77,13 @@ public class FieldService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Terrain introuvable"));
     }
 
+    /** Lecture sans filtre ni controle de propriete : usage interne (rappels, notifications). */
+    @Transactional(readOnly = true)
+    public Field getAny(UUID fieldId) {
+        return fields.findById(fieldId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Terrain introuvable"));
+    }
+
     private void validateSlot(Integer minutes) {
         if (minutes == null || !ALLOWED_SLOT_MINUTES.contains(minutes)) {
             throw new ApiException(HttpStatus.BAD_REQUEST,

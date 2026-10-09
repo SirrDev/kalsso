@@ -42,6 +42,8 @@ app:
       max-attempts: ${REFUND_MAX_ATTEMPTS:8}
       retry-minutes: ${REFUND_RETRY_MINUTES:10}
       poll-ms: ${REFUND_POLL_MS:60000}
+  booking:
+    reminder-poll-ms: ${REMINDER_POLL_MS:300000}
   notification:
     fake-mode: ${NOTIFICATION_FAKE_MODE:accepted}
     max-attempts: ${NOTIFICATION_MAX_ATTEMPTS:5}
