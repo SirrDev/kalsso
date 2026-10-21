@@ -24,5 +24,7 @@ public final class AuthDtos {
         }
     }
 
-    public record AuthResponse(String token, UserResponse user) {}
+    public record AuthResponse(String token, String refreshToken, UserResponse user) {}
+
+    public record RefreshRequest(@NotBlank String refreshToken) {}
 }

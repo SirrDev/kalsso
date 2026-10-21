@@ -32,6 +32,17 @@ public class AuthController {
         return authService.login(req);
     }
 
+    @PostMapping("/auth/refresh")
+    public AuthResponse refresh(@Valid @RequestBody RefreshRequest req) {
+        return authService.refresh(req.refreshToken());
+    }
+
+    @PostMapping("/auth/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(@Valid @RequestBody RefreshRequest req) {
+        authService.logout(req.refreshToken());
+    }
+
     @GetMapping("/me")
     public UserResponse me(Authentication auth) {
         return users.findById(UUID.fromString(auth.getName()))

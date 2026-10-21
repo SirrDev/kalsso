@@ -13,11 +13,14 @@ public class AuthService {
     private final UserRepository users;
     private final PasswordEncoder encoder;
     private final JwtService jwt;
+    private final RefreshTokenService refreshTokens;
 
-    public AuthService(UserRepository users, PasswordEncoder encoder, JwtService jwt) {
+    public AuthService(UserRepository users, PasswordEncoder encoder, JwtService jwt,
+                       RefreshTokenService refreshTokens) {
         this.users = users;
         this.encoder = encoder;
         this.jwt = jwt;
+        this.refreshTokens = refreshTokens;
     }
 
     @Transactional
@@ -37,15 +40,30 @@ public class AuthService {
         u.setRole(req.role());
         u.setWhatsappOptIn(req.whatsappOptIn());
         users.save(u);
-        return new AuthResponse(jwt.generate(u), UserResponse.from(u));
+        return new AuthResponse(jwt.generate(u), refreshTokens.issue(u.getId()), UserResponse.from(u));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public AuthResponse login(LoginRequest req) {
         User u = users.findByEmailIgnoreCase(req.email())
                 .filter(User::isEnabled)
                 .filter(x -> encoder.matches(req.password(), x.getPasswordHash()))
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Email ou mot de passe incorrect"));
-        return new AuthResponse(jwt.generate(u), UserResponse.from(u));
+        return new AuthResponse(jwt.generate(u), refreshTokens.issue(u.getId()), UserResponse.from(u));
+    }
+
+    /** Rotation du jeton de rafraichissement. Un compte desactive entre-temps ne peut plus se rafraichir. */
+    @Transactional(noRollbackFor = ApiException.class)
+    public AuthResponse refresh(String rawRefreshToken) {
+        RefreshTokenService.Issued issued = refreshTokens.rotate(rawRefreshToken);
+        User u = users.findById(issued.userId())
+                .filter(User::isEnabled)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Jeton de rafraichissement invalide"));
+        return new AuthResponse(jwt.generate(u), issued.rawToken(), UserResponse.from(u));
+    }
+
+    @Transactional
+    public void logout(String rawRefreshToken) {
+        refreshTokens.revoke(rawRefreshToken);
     }
 }
