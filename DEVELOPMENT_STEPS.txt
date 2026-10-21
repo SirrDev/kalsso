@@ -1,7 +1,8 @@
 ==============================================================
  FOOTBOOKING - SaaS de location de terrains de football
  Suivi des etapes de developpement
- Etat : octobre 2026 - 167 tests - migrations Flyway V1 a V6
+ Etat : octobre 2026 - 232 tests - migrations Flyway V1 a V8
+ main = d5bb365 (PR #52)
 ==============================================================
 Legende : [x] termine   [~] partiel   [ ] a faire
 
@@ -9,191 +10,121 @@ STACK
 - Backend  : Spring Boot 4.1 (Java 21), PostgreSQL 16, Flyway, JWT
 - Frontend : React + Vite + PWA (pas encore commence)
 - Paiement : PayTech (paiement integral, commission 3 %, remboursement integral)
-- Notifications : WhatsApp Business API + SMS (a faire, B6)
+- Notifications : WhatsApp + SMS derriere MessageSender (faux canal pour l'instant)
 - Deploiement : Docker Compose, CI/CD GitHub Actions, image sur ghcr.io
 
-AVANCEMENT GLOBAL (backend) : environ 60 % des taches, un peu moins en ponderant par l'effort.
-Termines : B0, B2, B3, B4, B5.  Partiels : B1, B7, B8.  A faire : B6.
+AVANCEMENT (estimations) : backend hors fournisseurs externes ~85 % (80 % pondere),
+frontend 0 %, projet global ~45 %.
 
 ==============================================================
  PARTIE 1 - BACKEND
 ==============================================================
 
 B0. Socle                                                        [x]
- [x] Projet Maven Spring Boot, monolithe modulaire (un package par domaine)
- [x] Dockerfile multi-stage (Java 21) + docker-compose (api + postgres)
- [x] Configuration par variables d'environnement (.env ignore par Git)
- [x] Flyway : V1 (schema + contrainte booking_no_overlap), V2 a V6
- [x] Actuator /actuator/health, Swagger (springdoc)
-
 B1. Authentification et roles                                    [~]
- [x] Utilisateurs, roles CLIENT / OWNER / STAFF / ADMIN
- [x] Inscription (CLIENT et OWNER seulement), connexion, BCrypt
- [x] JWT stateless, filtre de securite, erreurs JSON uniformes
- [ ] Refresh token
- [ ] Mot de passe oublie (depend de B6)
- [ ] Verification du telephone par code OTP (depend de B6)
- [ ] Creation du compte ADMIN au premier demarrage (variables d'environnement)
-     Aujourd'hui : on promeut un compte en base a la main (dev uniquement)
+ [x] Roles CLIENT / OWNER / STAFF / ADMIN, inscription, connexion, JWT
+ [x] Refresh token tournant (30 j, hache SHA-256, detection de reutilisation),
+     jeton d'acces 15 min, POST /api/auth/refresh et /logout (V8)
+ [x] Creation du compte ADMIN au demarrage (ADMIN_EMAIL / ADMIN_PASSWORD, >= 12 car.)
+ [x] Limitation de debit login (5/min) et inscription (5/h), en memoire, par IP
+ [ ] Mot de passe oublie (depend de B6-6)
+ [ ] Verification du telephone par OTP (depend de B6-6)
 
 B2. Complexes, terrains, horaires, tarifs                        [x]
- [x] CRUD complexe (venue) et terrain (field), controle de propriete (404)
- [x] Horaires d'ouverture par jour, jours de fermeture
- [x] Regles de tarification (jour precis > tous les jours), prix du debut de creneau
- [x] Fuseau horaire par complexe (V2, defaut Africa/Dakar)
- [ ] Upload des photos de terrain (stockage S3 / MinIO) - jamais fait
+ [ ] Upload des photos de terrain (S3 / MinIO) - jamais fait
 
 B3. Disponibilites et recherche                                  [x]
- [x] Generateur de creneaux (fonction pure, calcul en minutes)
- [x] GET /api/fields/{id}/availability (public) : AVAILABLE, BOOKED, PAST, NO_PRICE
- [x] Recherche publique par ville, format, surface (pagination, max 50)
- [x] Seuls les terrains actifs de complexes ACTIVE sont visibles
- [x] Validation / suspension des complexes par un ADMIN
- [ ] Cache Redis des disponibilites (non necessaire pour le moment)
+B4. Reservations                                                 [~]
+ [x] Tout le parcours (blocage 10 min, annulation, vues proprietaire)
+ [ ] Test de concurrence 20 threads (Testcontainers) - jamais ecrit
 
-B4. Reservations                                                 [x]
- [x] Entite Booking, contrainte SQL anti-chevauchement (arbitre unique)
- [x] Reservation PENDING avec blocage de 10 minutes, 409 si creneau pris
- [x] Statut BOOKED dans les disponibilites
- [x] Tache planifiee : annulation des blocages expires (toutes les 60 s)
- [x] Mes reservations, annulation client (PENDING : toujours ; CONFIRMED : jusqu'a 24 h avant)
- [x] Proprietaire : voir les reservations d'un terrain, bloquer / debloquer un creneau
- [ ] Test de concurrence 20 threads avec Testcontainers - jamais ecrit
+B5. Paiement PayTech                                             [x] (faux fournisseur)
+ [ ] B5-8 : validation avec le vrai bac a sable PayTech
+ [ ] Activation production PayTech
 
-B5. Paiement PayTech                                             [x] (valide avec faux fournisseur)
- [x] Modele Payment, commission 3 % (arrondie a l'unite pour le XOF), stockee par paiement
- [x] POST /api/bookings/{id}/pay : paiement INITIATED, blocage prolonge a 15 min,
-     2e appel = meme paiement (pas de double debit)
- [x] Client PayTech derriere l'interface PaymentProvider (env test par defaut)
- [x] Notification IPN : signature HMAC-SHA256 obligatoire, idempotence, verrou de ligne
- [x] Paiement tardif : creneau libre -> confirme ; creneau repris -> REFUND_PENDING
- [x] Remboursement integral automatique (tache planifiee, 8 tentatives, 10 min d'ecart)
- [x] Annulation d'une reservation CONFIRMED -> remboursement automatique
- [x] Routes ADMIN : liste des remboursements en attente, reprise forcee
- [ ] B5-8 : validation avec le vrai bac a sable PayTech (compte requis), voir plus bas
- [ ] Activation du compte PayTech en production (dossier NINEA, registre de commerce, etc.)
-
-B6. Notifications WhatsApp et SMS                                [ ]
- [ ] B6-1 Interface NotificationChannel + faux canal de test, table notification (V1)
- [ ] B6-2 Boite d'envoi (outbox) ecrite dans la meme transaction que l'evenement
- [ ] B6-3 Worker planifie : envoi, reessais espaces, abandon visible
- [ ] B6-4 Consentement (whatsapp_opt_in), telephone obligatoire, repli SMS
- [ ] B6-5 Rappels J-1 et H-2 (idempotents)
- [ ] B6-6 Vrais fournisseurs : WhatsApp (modeles approuves par Meta), SMS
-     A lancer tot : la validation des modeles par Meta prend plusieurs jours
+B6. Notifications                                                [~]
+ [x] B6-1 modele + MessageSender + faux canal (V7)
+ [x] B6-2 outbox ecrite dans la transaction (confirmation, annulation, remboursement)
+ [x] B6-3 worker : verrou de ligne, reessais espaces, FAILED visible
+ [x] B6-4 canal selon whatsapp_opt_in, repli SMS apres un echec WhatsApp
+ [x] B6-5 rappels 24 h et 2 h, idempotents, heure locale du complexe
+ [ ] B6-6 vrais fournisseurs WhatsApp (modeles Meta) et SMS
 
 B7. Tableau de bord et administration                            [~]
- [x] Back-office minimal : liste / approbation / suspension des complexes
- [x] Back-office minimal : remboursements en attente
- [ ] Statistiques proprietaire (revenus nets, taux de remplissage)
-     Regle : compter seulement les paiements SUCCEEDED (pas REFUNDED)
- [ ] Gestion du personnel (STAFF rattache a un complexe)
- [ ] Litiges, rapport des commissions, liste des paiements
+ [x] Validation complexes, remboursements en attente
+ [ ] Statistiques proprietaire (revenus nets = paiements SUCCEEDED seulement)
+ [ ] Personnel STAFF
+ [ ] Liste des paiements, rapport des commissions, litiges
 
 B8. Qualite et production                                        [~]
- [x] CI GitHub Actions : build + tests + build Docker a chaque PR
- [x] CD : image publiee sur ghcr.io a chaque merge sur main
- [x] Dependabot (versions majeures de Spring Boot, springdoc et Java ignorees)
- [ ] Deploiement SSH (desactive tant que DEPLOY_ENABLED n'est pas "true", voir docs/CICD.md)
- [ ] docker-compose.prod.yml : ajouter les variables PayTech et PAYMENT_PROVIDER=paytech
- [ ] .env.example : documenter les variables de paiement (sans valeur reelle)
- [ ] Desactiver Swagger et api-docs en production
- [ ] Supprimer l'utilisateur genere par Spring (avertissement au demarrage)
- [ ] Unifier le format des erreurs (certains 400 viennent de Spring, pas de notre handler)
- [ ] Limitation de debit sur login et inscription
- [ ] Logs structures, sauvegardes de la base, HTTPS (Caddy deja prepare)
+ [x] CI, CD image ghcr.io, Dependabot
+ [ ] Test de concurrence (voir B4)
+ [ ] Swagger / api-docs desactives en production
+ [ ] Unifier le format d'erreur (400 produits par Spring)
+ [ ] Supprimer l'utilisateur genere par Spring
+ [ ] .env.example : documenter ADMIN_EMAIL, ADMIN_PASSWORD, APP_NOTIFICATION_SENDER,
+     NOTIFICATION_FAKE_MODE/RETRY_MINUTES/MAX_ATTEMPTS, REMINDER_POLL_MS,
+     RATE_LIMIT_*, JWT_REFRESH_DAYS, DB_PORT, variables PayTech (valeurs vides)
+ [ ] docker-compose.prod.yml : variables PayTech, admin, notifications, rate limit
+ [ ] server.forward-headers-strategy: native derriere Caddy (sinon le limiteur voit l'IP du proxy)
+ [ ] Purge planifiee des refresh tokens revoques/expires
+ [ ] Logs structures, sauvegardes de la base, deploiement SSH
  [ ] Verifier dans la CI que le nombre de tests ne baisse pas
+ [ ] Dependabot repasse le Dockerfile en Java 26 : fermer ces PR (@dependabot ignore)
 
 ==============================================================
  PARTIE 2 - FRONTEND (React PWA) - rien de commence
 ==============================================================
-F0. Socle : Vite + React + TypeScript + Tailwind, vite-plugin-pwa, React Router,
-    TanStack Query, client API avec JWT, i18n, Dockerfile Nginx + service compose.
-    Recreer .github/workflows/frontend-ci.yml a ce moment (supprime pour l'instant).
-F1. Authentification : inscription, connexion, routes protegees par role.
-F2. Parcours client : recherche, fiche terrain, calendrier, reservation, paiement
-    (redirection vers PayTech), mes reservations, annulation.
-F3. Espace proprietaire : complexes, terrains, horaires, tarifs, calendrier des
-    reservations, blocage de creneaux, tableau de bord.
-F4. PWA : installation, cache hors ligne en consultation, performances.
-F5. Tests (Vitest, Playwright) et CI.
-
-==============================================================
- ORDRE DE LIVRAISON CONSEILLE
-==============================================================
-1. Fusionner la PR de B5-7 (remboursements), puis B6 (notifications) avec faux canal
-2. Demarrer F0 et F1 en parallele des demarches externes
-3. B5-8 : bac a sable PayTech, des que le compte existe
-4. B6-6 : vrais fournisseurs WhatsApp / SMS
-5. F2, F3, puis B1 (suite), B7, B8 et mise en production
+F0 socle + frontend-ci.yml | F1 auth (gerer refresh token) | F2 parcours client
+F3 espace proprietaire | F4 PWA | F5 tests et CI
 
 ==============================================================
  DEMARCHES EXTERNES (a lancer sans attendre le code)
 ==============================================================
- [ ] Compte PayTech (cles API, mode test disponible tout de suite)
- [ ] Activation production PayTech : email a contact@paytech.sn, objet
-     "Activation Compte PayTech" + pieces demandees. Delai : plusieurs jours
- [ ] Frais PayTech : verifier qu'ils sont couverts par la commission de 3 %
- [ ] PayTech : remboursement partiel possible ? frais rendus en cas de remboursement ?
- [ ] Compte Meta Business + modeles WhatsApp a faire approuver
+ [ ] Compte PayTech (cles de test), puis activation production
+ [ ] Frais PayTech couverts par les 3 % ? remboursement partiel ? frais rendus ?
+ [ ] Compte Meta Business + modeles WhatsApp (parametres : start, end, price, currency,
+     date, hour, field, amount)
  [ ] Choix du fournisseur SMS
- [ ] VPS + nom de domaine (pour le deploiement et l'URL HTTPS de notification PayTech)
+ [ ] VPS + nom de domaine
 
 ==============================================================
  REGLES METIER EN VIGUEUR
 ==============================================================
-- Creneaux de 30, 60, 90 ou 120 minutes ; reservation jusqu'a 90 jours a l'avance
-- Prix d'un creneau = regle en vigueur a son heure de debut (plage debut incluse, fin exclue)
-- Blocage d'une reservation PENDING : 10 min, prolonge a 15 min au demarrage du paiement
-- Annulation client : PENDING toujours ; CONFIRMED jusqu'a 24 h avant le debut
-- Commission : 3 % arrondie a l'unite (XOF), non percue sur un paiement rembourse
-- Remboursement : integral, 8 tentatives espacees de 10 minutes, puis reprise manuelle
-- Blocage manuel par le proprietaire : 14 jours maximum
-- Un proprietaire ne voit jamais les ressources d'autrui : reponse 404
+- Creneaux 30/60/90/120 min ; reservation jusqu'a 90 jours ; blocage manuel 14 jours max
+- Prix = regle en vigueur a l'heure de debut
+- Blocage PENDING : 10 min, 15 min au paiement
+- Annulation client : PENDING toujours ; CONFIRMED jusqu'a 24 h avant
+- Commission 3 % arrondie a l'unite, non percue si rembourse ; remboursement integral,
+  8 tentatives espacees de 10 min puis reprise manuelle
+- Notifications : WhatsApp si opt-in et telephone, sinon SMS ; un echec WhatsApp bascule en SMS ;
+  5 tentatives max, delai croissant (5 min x tentative)
+- 404 (et non 403) sur les ressources d'autrui
 
 ==============================================================
- RESUME DE L'API
+ API (ajouts depuis V6)
 ==============================================================
-Public
-  POST /api/auth/register                 POST /api/auth/login
-  GET  /api/fields/search                 GET  /api/fields/{id}/availability?date=
-  POST /api/payments/paytech/ipn          (authentifie par signature HMAC)
-  GET  /actuator/health
-Connecte
-  GET  /api/me
-CLIENT
-  POST /api/bookings                      GET  /api/bookings/mine
-  POST /api/bookings/{id}/cancel          POST /api/bookings/{id}/pay
-OWNER (/api/owner)
-  /venues (CRUD), /venues/{id}/fields, /fields/{id} (GET PUT DELETE)
-  /fields/{id}/opening-hours (GET PUT), /closed-days (GET POST DELETE)
-  /fields/{id}/pricing (GET POST DELETE)
-  /fields/{id}/bookings (GET), /fields/{id}/blocks (POST DELETE)
-ADMIN (/api/admin)
-  GET  /venues?status=                    POST /venues/{id}/approve | /suspend
-  GET  /payments/refunds                  POST /payments/{id}/refund
+POST /api/auth/refresh (corps : refreshToken)   POST /api/auth/logout (204)
+Reponse login/inscription : { token, refreshToken, user }
 
 ==============================================================
- POINTS DE VIGILANCE CONNUS
+ POINTS DE VIGILANCE
 ==============================================================
-- Protection de la branche main non appliquee (depot prive, offre gratuite) :
-  toujours passer par une branche + PR + CI verte avant de fusionner.
-- PayTech : a verifier avec le bac a sable (B5-8) :
-    * la notification arrive-t-elle bien en formulaire ?
-    * le champ hmac_compute est-il present dans chaque notification ?
-    * quel montant est annonce en mode test (reel, ou 100 a 150 CFA debites) ?
-    * la fin d'un remboursement n'est pas authentifiee : on la considere acquise
-      des que PayTech accepte la demande
-- PAYMENT_PROVIDER=fake : developpement local uniquement, jamais en production.
-- Aucune cle reelle dans un fichier commite ; seules des valeurs bidon (test-key,
-  test-secret) servent aux simulations locales.
-- Les migrations Flyway deja appliquees ne se modifient jamais : creer Vn+1.
+- Protection de main non appliquee : branche + PR + CI verte.
+- PayTech non verifie en reel (formulaire ? hmac_compute ? montant en test ?).
+- PAYMENT_PROVIDER=fake et APP_NOTIFICATION_SENDER=fake : local uniquement.
+- @ConditionalOnExpression("'${app.notification.sender:}' != ''") : ne pas revenir a
+  @ConditionalOnProperty sans havingValue (la variable vide du compose l'activerait).
+- Ne jamais coller de mot de passe ou de cle dans la conversation.
+- DB_PORT=5433 dans .env (5432 pris sur la machine de dev).
 
 ==============================================================
- TESTS : 167
+ TESTS : 232
 ==============================================================
- AvailabilityService 17 | SlotGenerator 8 | BookingConfirmation 3 | BookingService 17
- OwnerBookingService 13 | FieldService 3 | OpeningHoursService 8 | PricingService 12
- Commission 8 | PaymentIpnService 13 | PaymentRefundRequests 2 | PaymentService 11
- PayTechClient 15 | PayTechSignature 10 | RefundService 12 | SearchService 4
- VenueService 11
+ AdminBootstrap 5 | InMemoryRateLimiter 4 | RateLimitFilter 4 | RefreshTokenService 7
+ UserContactLookup 3 | AvailabilityService 17 | SlotGenerator 8 | BookingConfirmation 5
+ BookingService 21 | OwnerBookingService 13 | ReminderService 3 | FieldService 3
+ OpeningHoursService 8 | PricingService 12 | FakeMessageSender 6 | NotificationDispatcher 14
+ NotificationService 6 | PayloadJson 5 | Commission 8 | PaymentIpnService 13
+ PaymentRefundRequests 2 | PaymentService 11 | PayTechClient 15 | PayTechSignature 10
+ RefundService 14 | SearchService 4 | VenueService 11
